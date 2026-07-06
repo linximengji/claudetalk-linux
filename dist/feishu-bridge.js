@@ -608,6 +608,22 @@ async function main() {
     }, 30000);
     // Event dedup
     const processedEventIds = new Map();
+    // WS silence detection: if no event received for 5 minutes, reconnect
+    let _lastEventTs = Date.now();
+    const WS_SILENCE_MS = 5 * 60 * 1000;
+    const _wsSilenceTimer = setInterval(() => {
+        const idle = Date.now() - _lastEventTs;
+        if (idle >= WS_SILENCE_MS) {
+            console.error(`[feishu-bridge] WS silence for ${Math.round(idle / 1000)}s, triggering reconnect`);
+            try {
+                wsClient.close();
+            }
+            catch { }
+            // startWsClient will be called by the WSClient error handler's retry logic
+        }
+    }, 60_000);
+    // Update timestamp on any WS event
+    function touchWsActivity() { _lastEventTs = Date.now(); }
     const DEDUP_TTL = 24 * 60 * 60 * 1000;
     setInterval(() => {
         const now = Date.now();
@@ -625,6 +641,7 @@ async function main() {
     const eventDispatcher = new Lark.EventDispatcher({});
     eventDispatcher.register({
         'im.message.receive_v1': async (data) => {
+            touchWsActivity();
             const event = data;
             const messageId = event.message?.message_id;
             const now = Date.now();
@@ -700,6 +717,7 @@ async function main() {
             }
         },
         'card.action.trigger': (data) => {
+            touchWsActivity();
             const d = data;
             const action = d.action;
             const value = action?.value || {};
@@ -712,8 +730,8 @@ async function main() {
                 action, value, actionType, messageId, chatId, botAppName,
             }, api);
         },
-        'im.message.reaction.created_v1': () => { },
-        'im.message.reaction.deleted_v1': () => { },
+        'im.message.reaction.created_v1': () => { touchWsActivity(); },
+        'im.message.reaction.deleted_v1': () => { touchWsActivity(); },
     });
     // WSClient — exponential backoff reconnect
     const wsClient = new Lark.WSClient({

@@ -647,6 +647,20 @@ async function main() {
 
   // Event dedup
   const processedEventIds = new Map<string, number>()
+
+  // WS silence detection: if no event received for 5 minutes, reconnect
+  let _lastEventTs = Date.now()
+  const WS_SILENCE_MS = 5 * 60 * 1000
+  const _wsSilenceTimer = setInterval(() => {
+    const idle = Date.now() - _lastEventTs
+    if (idle >= WS_SILENCE_MS) {
+      console.error(`[feishu-bridge] WS silence for ${Math.round(idle / 1000)}s, triggering reconnect`)
+      try { wsClient.close() } catch {}
+      // startWsClient will be called by the WSClient error handler's retry logic
+    }
+  }, 60_000)
+  // Update timestamp on any WS event
+  function touchWsActivity() { _lastEventTs = Date.now() }
   const DEDUP_TTL = 24 * 60 * 60 * 1000
   setInterval(() => {
     const now = Date.now()
@@ -666,6 +680,7 @@ async function main() {
   const eventDispatcher = new Lark.EventDispatcher({})
   eventDispatcher.register({
     'im.message.receive_v1': async (data: any) => {
+      touchWsActivity()
       const event = data as any
       const messageId = event.message?.message_id
       const now = Date.now()
@@ -746,6 +761,7 @@ async function main() {
     },
 
     'card.action.trigger': (data: unknown) => {
+      touchWsActivity()
       const d = data as Record<string, unknown>
       const action = d.action as Record<string, unknown> | undefined
       const value = (action?.value as Record<string, unknown>) || {}
@@ -761,8 +777,8 @@ async function main() {
       }, api)
     },
 
-    'im.message.reaction.created_v1': () => {},
-    'im.message.reaction.deleted_v1': () => {},
+    'im.message.reaction.created_v1': () => { touchWsActivity() },
+    'im.message.reaction.deleted_v1': () => { touchWsActivity() },
   })
 
   // WSClient — exponential backoff reconnect
