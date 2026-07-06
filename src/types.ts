@@ -368,6 +368,10 @@ export interface PeerMessage {
   message: string
   /** 创建时间戳（ms） */
   createdAt: number
+  /** 链路追踪 ID — bridge 生成，claudetalk 日志携带 */
+  traceId?: string
+  /** 是否群聊 — bridge 按 chatId 前缀注入 */
+  isGroup?: boolean
 }
 
 /** 飞书 Channel 专属配置 */

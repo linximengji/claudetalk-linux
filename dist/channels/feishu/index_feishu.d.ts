@@ -31,6 +31,8 @@ export declare class FeishuClient implements Channel {
     private readonly chatMemberStore;
     private readonly chatMemberResolver;
     private readonly logger;
+    /** bridge ACK 端点（仅 feishu 通道使用） */
+    private readonly bridgeAckUrl;
     constructor(config: FeishuChannelConfig);
     /**
      * 启动 peer-messages 轮询
@@ -99,6 +101,10 @@ export declare class FeishuClient implements Channel {
      */
     private updateCardToDone;
     private updateCardToCreated;
+    /**
+     * 通知 bridge 某条 peer-message 已处理完成
+     */
+    private sendAck;
     /**
      * Stop timers and clean up resources
      */

@@ -170,23 +170,26 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
   // /restart → kill + respawn claudetalk (self-destruct via marker)
   if (lower === '/restart' || lower === '重启') {
     // Write marker so the environment's supervisor restarts claudetalk
-    fs.writeFileSync(path.join(OPS_DATA_DIR, '.restart-claudetalk'), '')
-    console.error(`[feishu-bridge] /restart: wrote .restart-claudetalk marker`)
+    const markerPath = path.join(OPS_DATA_DIR, '.restart-claudetalk')
+    fs.writeFileSync(markerPath, '')
+    console.error(`[feishu-bridge] /restart: wrote marker at ${markerPath}, pid=${process.pid}`)
     return true
   }
 
   // /daemon restart → kill + respawn ops-daemon (self-destruct via marker)
   if (lower === '/daemon restart' || lower === '重启daemon') {
-    fs.writeFileSync(path.join(OPS_DATA_DIR, '.restart-daemon'), '')
-    console.error(`[feishu-bridge] /daemon restart: wrote .restart-daemon marker`)
+    const markerPath = path.join(OPS_DATA_DIR, '.restart-daemon')
+    fs.writeFileSync(markerPath, '')
+    console.error(`[feishu-bridge] /daemon restart: wrote marker at ${markerPath}, pid=${process.pid}`)
     return true
   }
 
   // Service start/stop via docker compose
   for (const [keyword, svcName] of Object.entries(SERVICE_KEYWORDS)) {
     if (lower.includes('打开' + keyword) || lower.includes('开启' + keyword)) {
+      console.error(`[feishu-bridge] docker start ${svcName}: keyword=${keyword}`)
       _dockerStart(svcName).then(ok => {
-        console.error(`[feishu-bridge] docker start ${svcName}: ${ok}`)
+        console.error(`[feishu-bridge] docker start ${svcName} result: ${ok}`)
         if (api) {
           api.sendText(conversationId, ok ? `✅ ${svcName} 已启动` : `❌ 启动 ${svcName} 失败`, receiveIdType).catch(() => {})
         }
@@ -194,8 +197,9 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
       return true
     }
     if (lower.includes('关闭' + keyword)) {
+      console.error(`[feishu-bridge] docker stop ${svcName}: keyword=${keyword}`)
       _dockerStop(svcName).then(ok => {
-        console.error(`[feishu-bridge] docker stop ${svcName}: ${ok}`)
+        console.error(`[feishu-bridge] docker stop ${svcName} result: ${ok}`)
         if (api) {
           api.sendText(conversationId, ok ? `✅ ${svcName} 已关闭` : `❌ 关闭 ${svcName} 失败`, receiveIdType).catch(() => {})
         }
@@ -207,16 +211,20 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
   // 开启远程 → kill stale cloudflared + start cloudflared tunnel + start dashboard
   if (lower.includes('开启远程') || lower.includes('打开远程')) {
     if (_remoteBusy) {
+      console.error(`[feishu-bridge] 开启远程: denied by _remoteBusy flag`)
       if (api) api.sendText(conversationId, '⏳ 上一个远程操作还在执行中，请稍候...', receiveIdType).catch(() => {})
       return true
     }
     _remoteBusy = true
+    console.error(`[feishu-bridge] 开启远程: START, pid=${process.pid}`)
     if (api) api.sendText(conversationId, '⏳ 远程服务正在启动...', receiveIdType).catch(() => {})
 
     // Kill stale cloudflared first, then restart both tunnel and dashboard
-    exec('pkill -f cloudflared 2>/dev/null; sleep 2', { timeout: 10000 }, () => {
+    exec('pkill -f cloudflared 2>/dev/null; sleep 2', { timeout: 10000 }, (err) => {
+      console.error(`[feishu-bridge] 开启远程: pkill done, err=${err}`)
       pythonExec('ops_daemon.tunnel_manager', ['start'], { timeout: 60000 })
         .then(() => {
+          console.error(`[feishu-bridge] 开启远程: tunnel_manager start done, waiting for health...`)
           // Wait for tunnel + dashboard health
           return Promise.all([
             waitForTunnelHealth(60000),
@@ -225,6 +233,7 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
         })
         .then(([tunOk, dashOk]) => {
           _remoteBusy = false
+          console.error(`[feishu-bridge] 开启远程: tunOk=${tunOk} dashOk=${dashOk}`)
           if (tunOk && dashOk) {
             if (api) api.sendText(conversationId, '✅ 远程服务已就绪\nDashboard: :8765\nTunnel: 已连接\n访问: https://term.linximengji.com', receiveIdType).catch(() => {})
           } else {
@@ -236,6 +245,7 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
         })
         .catch(e => {
           _remoteBusy = false
+          console.error(`[feishu-bridge] 开启远程: tunnel_manager start FAILED: ${e.message?.slice(0, 200) || e}`)
           if (api) api.sendText(conversationId, `❌ 远程启动失败: ${e.message?.slice(0, 100) || e}`, receiveIdType).catch(() => {})
         })
     })
@@ -245,14 +255,17 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
   // 关闭远程 → kill cloudflared + stop dashboard
   if (lower.includes('关闭远程')) {
     if (_remoteBusy) {
+      console.error(`[feishu-bridge] 关闭远程: denied by _remoteBusy flag`)
       if (api) api.sendText(conversationId, '⏳ 上一个远程操作还在执行中，请稍候...', receiveIdType).catch(() => {})
       return true
     }
     _remoteBusy = true
+    console.error(`[feishu-bridge] 关闭远程: START, pid=${process.pid}`)
     if (api) api.sendText(conversationId, '⏳ 正在关闭远程服务...', receiveIdType).catch(() => {})
 
     pythonExec('ops_daemon.tunnel_manager', ['stop'], { timeout: 60000 })
-      .then(() => {
+      .then((result) => {
+        console.error(`[feishu-bridge] 关闭远程: tunnel_manager stop done, waiting for services down...`)
         return Promise.all([
           httpPortGone(8765, 25000),
           waitForTunnelGone(15000),
@@ -260,6 +273,7 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
       })
       .then(([dashGone, tunGone]) => {
         _remoteBusy = false
+        console.error(`[feishu-bridge] 关闭远程: dashGone=${dashGone} tunGone=${tunGone}`)
         if (dashGone && tunGone) {
           if (api) api.sendText(conversationId, '✅ 远程服务已关闭\nDashboard: 已停\nTunnel: 已断开', receiveIdType).catch(() => {})
         } else {
@@ -271,6 +285,7 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
       })
       .catch(e => {
         _remoteBusy = false
+        console.error(`[feishu-bridge] 关闭远程: tunnel_manager stop FAILED: ${e.message?.slice(0, 200) || e}`)
         if (api) api.sendText(conversationId, `❌ 远程关闭失败: ${e.message?.slice(0, 100) || e}`, receiveIdType).catch(() => {})
       })
     return true
@@ -351,6 +366,7 @@ function handleCardAction(ctx: CardActionContext, api: FeishuApiClient): { toast
       }
 
       // Non-system execute — forward to claudetalk via peer-message
+      const execTraceId = randomUUID().slice(0, 8)
       const peerMsg: PeerMessage = {
         id: randomUUID(),
         from: 'feishu-bridge',
@@ -358,9 +374,11 @@ function handleCardAction(ctx: CardActionContext, api: FeishuApiClient): { toast
         messageId,
         message: prompt,
         createdAt: Date.now(),
+        traceId: execTraceId,
+        isGroup: chatId.startsWith('oc_'),
       }
       appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg)
-      console.error(`[feishu-bridge] forwarded execute to claudetalk: ${prompt.substring(0, 80)}`)
+      console.error(`[feishu-bridge] [trace=${execTraceId}] forwarded execute to claudetalk: ${prompt.substring(0, 80)}`)
       return { toast: { type: 'info', content: '已转发给 ClaudeTalk 处理' } }
     }
 
@@ -445,6 +463,7 @@ function handleCardAction(ctx: CardActionContext, api: FeishuApiClient): { toast
       // 审批由 claudetalk 注册，bridge 侧 map 通常为空。
       // 转发给 claudetalk（通过 peer-message），由 claudetalk 的 handleApprovalCallback 处理。
       if (requestId) {
+        const appTraceId = randomUUID().slice(0, 8)
         const peerMsg: PeerMessage = {
           id: randomUUID(),
           from: 'feishu-bridge',
@@ -452,15 +471,18 @@ function handleCardAction(ctx: CardActionContext, api: FeishuApiClient): { toast
           messageId: ctx.messageId,
           message: JSON.stringify({ __approval_callback__: true, requestId, decision: value?.decision }),
           createdAt: Date.now(),
+          traceId: appTraceId,
+          isGroup: ctx.chatId.startsWith('oc_'),
         }
         appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg)
-        console.error(`[feishu-bridge] forwarded approval-action to claudetalk: requestId=${requestId}`)
+        console.error(`[feishu-bridge] [trace=${appTraceId}] forwarded approval-action to claudetalk: requestId=${requestId}`)
       }
       return { toast: { type: 'silent', content: '' } }
     }
 
     case 'confirm-archive': {
       // Forward to claudetalk — needs _lastConvGetter which lives in claudetalk
+      const archTraceId = randomUUID().slice(0, 8)
       const peerMsg: PeerMessage = {
         id: randomUUID(),
         from: 'feishu-bridge',
@@ -468,8 +490,11 @@ function handleCardAction(ctx: CardActionContext, api: FeishuApiClient): { toast
         messageId,
         message: '__confirm_archive__',
         createdAt: Date.now(),
+        traceId: archTraceId,
+        isGroup: chatId.startsWith('oc_'),
       }
       appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg)
+      console.error(`[feishu-bridge] [trace=${archTraceId}] forwarded confirm-archive to claudetalk: chatId=${chatId}`)
       return { toast: { type: 'info', content: '正在加入手机待办...' } }
     }
 
@@ -477,6 +502,18 @@ function handleCardAction(ctx: CardActionContext, api: FeishuApiClient): { toast
       return { toast: { type: 'error', content: `未知操作: ${actionType}` } }
   }
 }
+
+// ========== ACK 追踪 ==========
+
+/** 已确认处理的 peer-message ID 集合（内存，重启丢失） */
+const ackedPeerIds = new Set<string>()
+
+const ACK_LOG_INTERVAL = 5 * 60 * 1000 // 5min
+setInterval(() => {
+  if (ackedPeerIds.size > 0) {
+    console.error(`[feishu-bridge] ACK-ed ${ackedPeerIds.size} peer messages total since startup`)
+  }
+}, ACK_LOG_INTERVAL)
 
 // ========== HTTP Server ==========
 
@@ -497,6 +534,28 @@ function createHealthServer(): http.Server {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ status: 'ok', message: 'shutting down' }))
       process.nextTick(() => { process.exit(0) })
+      return
+    }
+
+    // ACK endpoint — claudetalk 处理后通知 bridge
+    if (url.pathname === '/ack' && req.method === 'POST') {
+      let body = ''
+      req.on('data', (chunk: string) => { body += chunk })
+      req.on('end', () => {
+        try {
+          const data = JSON.parse(body)
+          if (data.peerId) {
+            ackedPeerIds.add(data.peerId)
+            const traceTag = data.traceId ? `trace=${data.traceId} ` : ''
+            console.error(`[feishu-bridge] ACK received: peerId=${data.peerId} ${traceTag}status=${data.status || 'ok'}`)
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: 'invalid JSON' }))
+        }
+      })
       return
     }
 
@@ -668,6 +727,7 @@ async function main() {
 
         if (handleSystemCommand(finalText, conversationId, api)) return
 
+        const traceId = randomUUID().slice(0, 8)
         const peerMsg: PeerMessage = {
           id: randomUUID(),
           from: botAppName || 'feishu-bridge',
@@ -675,9 +735,11 @@ async function main() {
           messageId: message.message_id,
           message: finalText,
           createdAt: Date.now(),
+          traceId,
+          isGroup,
         }
         appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg)
-        console.error(`[feishu-bridge] forwarded to claudetalk: ${finalText.substring(0, 80)}`)
+        console.error(`[feishu-bridge] [trace=${traceId}] forwarded to claudetalk: ${finalText.substring(0, 80)}`)
       } catch (err) {
         console.error(`[feishu-bridge] message handler error: ${err}`)
       }

@@ -39,7 +39,10 @@ export class FeishuClient {
     chatMemberStore;
     chatMemberResolver;
     logger;
+    /** bridge ACK 端点（仅 feishu 通道使用） */
+    bridgeAckUrl;
     constructor(config) {
+        this.bridgeAckUrl = `http://127.0.0.1:${process.env.FEISHU_BRIDGE_PORT || '9878'}/ack`;
         this.config = config;
         const workDir = config.workDir || process.cwd();
         this.claudetalkDir = path.join(workDir, '.claudetalk');
@@ -104,9 +107,10 @@ export class FeishuClient {
         const succeededIds = [];
         for (const peerMsg of dedupedMessages) {
             this.processedPeerIds.set(peerMsg.id, now);
+            const traceTag = peerMsg.traceId ? `[trace=${peerMsg.traceId}] ` : '';
             // 1. 给原消息回复 Get 表情（收到确认）
             this.addMessageReaction(peerMsg.messageId, 'Get').catch((error) => {
-                this.logger(`Failed to add reaction to peer message ${peerMsg.messageId}: ${error}`);
+                this.logger(`${traceTag}Failed to add reaction to peer message ${peerMsg.messageId}: ${error}`);
             });
             // 2a. 审批回调：由 feishu-bridge 转发的 approval-action
             if (peerMsg.message.startsWith('{') && peerMsg.message.includes('__approval_callback__')) {
@@ -116,12 +120,12 @@ export class FeishuClient {
                         request_id: payload.requestId,
                         decision: payload.decision,
                     });
-                    this.logger(`Approval callback result: ${JSON.stringify(result)}`);
+                    this.logger(`${traceTag}Approval callback result: ${JSON.stringify(result)}`);
                     succeededIds.push(peerMsg.id);
                     continue;
                 }
                 catch (err) {
-                    this.logger(`Failed to handle approval callback: ${err}`);
+                    this.logger(`${traceTag}Failed to handle approval callback: ${err}`);
                 }
             }
             // 2b. 走 channelMessageHandler 流程（即 Claude CLI 流程）
@@ -129,24 +133,30 @@ export class FeishuClient {
                 const context = {
                     conversationId: peerMsg.chatId,
                     senderId: peerMsg.from,
-                    isGroup: true,
+                    isGroup: peerMsg.isGroup ?? peerMsg.chatId.startsWith('oc_'),
                     userId: peerMsg.from,
                     channelType: 'feishu',
                     processedMessage: undefined,
                 };
                 try {
                     await this.channelMessageHandler(context, peerMsg.message);
-                    this.logger(`Peer message processed: id=${peerMsg.id}, from=${peerMsg.from}`);
+                    this.logger(`${traceTag}Peer message processed: id=${peerMsg.id}, from=${peerMsg.from}`);
                     succeededIds.push(peerMsg.id);
                 }
                 catch (error) {
-                    this.logger(`Failed to process peer message id=${peerMsg.id}: ${error}`);
+                    this.logger(`${traceTag}Failed to process peer message id=${peerMsg.id}: ${error}`);
                 }
             }
         }
         // 原子删除成功处理的消息
         if (succeededIds.length > 0) {
             removePeerMessages(this.claudetalkDir, botName, new Set(succeededIds));
+            // 异步通知 bridge ACK（不阻塞当前流程）
+            for (const peerMsg of dedupedMessages) {
+                if (succeededIds.includes(peerMsg.id)) {
+                    this.sendAck(peerMsg.id, peerMsg.traceId, 'ok').catch(() => { });
+                }
+            }
         }
         // 清理过期条目（>1h）
         for (const [id, ts] of this.processedPeerIds.entries()) {
@@ -565,6 +575,20 @@ export class FeishuClient {
         if (data.code !== 0) {
             this.logger(`updateCardToCreated API error: ${JSON.stringify(data)}`);
         }
+    }
+    /**
+     * 通知 bridge 某条 peer-message 已处理完成
+     */
+    async sendAck(peerId, traceId, status) {
+        try {
+            await fetch(this.bridgeAckUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ peerId, traceId, status }),
+                signal: AbortSignal.timeout(2000),
+            });
+        }
+        catch { /* bridge ACK 失败不阻塞主流程 */ }
     }
     /**
      * Stop timers and clean up resources

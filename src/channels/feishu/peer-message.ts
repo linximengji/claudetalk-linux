@@ -161,6 +161,7 @@ export function writePeerMessagesFromContent(
       messageId,
       message: content,
       createdAt: Date.now(),
+      isGroup: chatId.startsWith('oc_'),
     };
 
     appendPeerMessage(claudetalkDir, botName, peerMessage);

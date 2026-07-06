@@ -130,6 +130,7 @@ export function writePeerMessagesFromContent(claudetalkDir, chatId, messageId, c
             messageId,
             message: content,
             createdAt: Date.now(),
+            isGroup: chatId.startsWith('oc_'),
         };
         appendPeerMessage(claudetalkDir, botName, peerMessage);
         logger(`[peer-message] Wrote peer message to bot_${botName}.json: messageId=${messageId}, from=${fromProfile}`);
