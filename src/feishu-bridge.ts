@@ -170,26 +170,23 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
   // /restart → kill + respawn claudetalk (self-destruct via marker)
   if (lower === '/restart' || lower === '重启') {
     // Write marker so the environment's supervisor restarts claudetalk
-    const markerPath = path.join(OPS_DATA_DIR, '.restart-claudetalk')
-    fs.writeFileSync(markerPath, '')
-    console.error(`[feishu-bridge] /restart: wrote marker at ${markerPath}, pid=${process.pid}`)
+    fs.writeFileSync(path.join(OPS_DATA_DIR, '.restart-claudetalk'), '')
+    console.error(`[feishu-bridge] /restart: wrote .restart-claudetalk marker`)
     return true
   }
 
   // /daemon restart → kill + respawn ops-daemon (self-destruct via marker)
   if (lower === '/daemon restart' || lower === '重启daemon') {
-    const markerPath = path.join(OPS_DATA_DIR, '.restart-daemon')
-    fs.writeFileSync(markerPath, '')
-    console.error(`[feishu-bridge] /daemon restart: wrote marker at ${markerPath}, pid=${process.pid}`)
+    fs.writeFileSync(path.join(OPS_DATA_DIR, '.restart-daemon'), '')
+    console.error(`[feishu-bridge] /daemon restart: wrote .restart-daemon marker`)
     return true
   }
 
   // Service start/stop via docker compose
   for (const [keyword, svcName] of Object.entries(SERVICE_KEYWORDS)) {
     if (lower.includes('打开' + keyword) || lower.includes('开启' + keyword)) {
-      console.error(`[feishu-bridge] docker start ${svcName}: keyword=${keyword}`)
       _dockerStart(svcName).then(ok => {
-        console.error(`[feishu-bridge] docker start ${svcName} result: ${ok}`)
+        console.error(`[feishu-bridge] docker start ${svcName}: ${ok}`)
         if (api) {
           api.sendText(conversationId, ok ? `✅ ${svcName} 已启动` : `❌ 启动 ${svcName} 失败`, receiveIdType).catch(() => {})
         }
@@ -197,9 +194,8 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
       return true
     }
     if (lower.includes('关闭' + keyword)) {
-      console.error(`[feishu-bridge] docker stop ${svcName}: keyword=${keyword}`)
       _dockerStop(svcName).then(ok => {
-        console.error(`[feishu-bridge] docker stop ${svcName} result: ${ok}`)
+        console.error(`[feishu-bridge] docker stop ${svcName}: ${ok}`)
         if (api) {
           api.sendText(conversationId, ok ? `✅ ${svcName} 已关闭` : `❌ 关闭 ${svcName} 失败`, receiveIdType).catch(() => {})
         }
@@ -211,20 +207,16 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
   // 开启远程 → kill stale cloudflared + start cloudflared tunnel + start dashboard
   if (lower.includes('开启远程') || lower.includes('打开远程')) {
     if (_remoteBusy) {
-      console.error(`[feishu-bridge] 开启远程: denied by _remoteBusy flag`)
       if (api) api.sendText(conversationId, '⏳ 上一个远程操作还在执行中，请稍候...', receiveIdType).catch(() => {})
       return true
     }
     _remoteBusy = true
-    console.error(`[feishu-bridge] 开启远程: START, pid=${process.pid}`)
     if (api) api.sendText(conversationId, '⏳ 远程服务正在启动...', receiveIdType).catch(() => {})
 
     // Kill stale cloudflared first, then restart both tunnel and dashboard
-    exec('pkill -f cloudflared 2>/dev/null; sleep 2', { timeout: 10000 }, (err) => {
-      console.error(`[feishu-bridge] 开启远程: pkill done, err=${err}`)
+    exec('pkill -f cloudflared 2>/dev/null; sleep 2', { timeout: 10000 }, () => {
       pythonExec('ops_daemon.tunnel_manager', ['start'], { timeout: 60000 })
         .then(() => {
-          console.error(`[feishu-bridge] 开启远程: tunnel_manager start done, waiting for health...`)
           // Wait for tunnel + dashboard health
           return Promise.all([
             waitForTunnelHealth(60000),
@@ -233,7 +225,6 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
         })
         .then(([tunOk, dashOk]) => {
           _remoteBusy = false
-          console.error(`[feishu-bridge] 开启远程: tunOk=${tunOk} dashOk=${dashOk}`)
           if (tunOk && dashOk) {
             if (api) api.sendText(conversationId, '✅ 远程服务已就绪\nDashboard: :8765\nTunnel: 已连接\n访问: https://term.linximengji.com', receiveIdType).catch(() => {})
           } else {
@@ -245,7 +236,6 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
         })
         .catch(e => {
           _remoteBusy = false
-          console.error(`[feishu-bridge] 开启远程: tunnel_manager start FAILED: ${e.message?.slice(0, 200) || e}`)
           if (api) api.sendText(conversationId, `❌ 远程启动失败: ${e.message?.slice(0, 100) || e}`, receiveIdType).catch(() => {})
         })
     })
@@ -255,17 +245,14 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
   // 关闭远程 → kill cloudflared + stop dashboard
   if (lower.includes('关闭远程')) {
     if (_remoteBusy) {
-      console.error(`[feishu-bridge] 关闭远程: denied by _remoteBusy flag`)
       if (api) api.sendText(conversationId, '⏳ 上一个远程操作还在执行中，请稍候...', receiveIdType).catch(() => {})
       return true
     }
     _remoteBusy = true
-    console.error(`[feishu-bridge] 关闭远程: START, pid=${process.pid}`)
     if (api) api.sendText(conversationId, '⏳ 正在关闭远程服务...', receiveIdType).catch(() => {})
 
     pythonExec('ops_daemon.tunnel_manager', ['stop'], { timeout: 60000 })
-      .then((result) => {
-        console.error(`[feishu-bridge] 关闭远程: tunnel_manager stop done, waiting for services down...`)
+      .then(() => {
         return Promise.all([
           httpPortGone(8765, 25000),
           waitForTunnelGone(15000),
@@ -273,7 +260,6 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
       })
       .then(([dashGone, tunGone]) => {
         _remoteBusy = false
-        console.error(`[feishu-bridge] 关闭远程: dashGone=${dashGone} tunGone=${tunGone}`)
         if (dashGone && tunGone) {
           if (api) api.sendText(conversationId, '✅ 远程服务已关闭\nDashboard: 已停\nTunnel: 已断开', receiveIdType).catch(() => {})
         } else {
@@ -285,7 +271,6 @@ function handleSystemCommand(command: string, conversationId: string, api?: Feis
       })
       .catch(e => {
         _remoteBusy = false
-        console.error(`[feishu-bridge] 关闭远程: tunnel_manager stop FAILED: ${e.message?.slice(0, 200) || e}`)
         if (api) api.sendText(conversationId, `❌ 远程关闭失败: ${e.message?.slice(0, 100) || e}`, receiveIdType).catch(() => {})
       })
     return true
@@ -503,18 +488,6 @@ function handleCardAction(ctx: CardActionContext, api: FeishuApiClient): { toast
   }
 }
 
-// ========== ACK 追踪 ==========
-
-/** 已确认处理的 peer-message ID 集合（内存，重启丢失） */
-const ackedPeerIds = new Set<string>()
-
-const ACK_LOG_INTERVAL = 5 * 60 * 1000 // 5min
-setInterval(() => {
-  if (ackedPeerIds.size > 0) {
-    console.error(`[feishu-bridge] ACK-ed ${ackedPeerIds.size} peer messages total since startup`)
-  }
-}, ACK_LOG_INTERVAL)
-
 // ========== HTTP Server ==========
 
 function createHealthServer(): http.Server {
@@ -537,7 +510,6 @@ function createHealthServer(): http.Server {
       return
     }
 
-    // ACK endpoint — claudetalk 处理后通知 bridge
     if (url.pathname === '/ack' && req.method === 'POST') {
       let body = ''
       req.on('data', (chunk: string) => { body += chunk })
@@ -545,16 +517,12 @@ function createHealthServer(): http.Server {
         try {
           const data = JSON.parse(body)
           if (data.peerId) {
-            ackedPeerIds.add(data.peerId)
             const traceTag = data.traceId ? `trace=${data.traceId} ` : ''
-            console.error(`[feishu-bridge] ACK received: peerId=${data.peerId} ${traceTag}status=${data.status || 'ok'}`)
+            console.error(`[feishu-bridge] ACK: peerId=${data.peerId} ${traceTag}status=${data.status || 'ok'}`)
           }
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: true }))
-        } catch (e) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: false, error: 'invalid JSON' }))
-        }
+        } catch {}
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true }))
       })
       return
     }
@@ -647,7 +615,6 @@ async function main() {
 
   // Event dedup
   const processedEventIds = new Map<string, number>()
-
   const DEDUP_TTL = 24 * 60 * 60 * 1000
   setInterval(() => {
     const now = Date.now()
@@ -667,9 +634,6 @@ async function main() {
   const eventDispatcher = new Lark.EventDispatcher({})
   eventDispatcher.register({
     'im.message.receive_v1': async (data: any) => {
-      // RAW log before any processing — detect if WS event was received at all
-      const _rawMsg = data as any
-      console.error("[bridge] RAW im.message.receive_v1: msgId=" + (_rawMsg.message?.message_id || '?') + " type=" + (_rawMsg.message?.chat_type || '?'))
       const event = data as any
       const messageId = event.message?.message_id
       const now = Date.now()
@@ -731,7 +695,6 @@ async function main() {
 
         if (handleSystemCommand(finalText, conversationId, api)) return
 
-        const traceId = randomUUID().slice(0, 8)
         const peerMsg: PeerMessage = {
           id: randomUUID(),
           from: botAppName || 'feishu-bridge',
@@ -739,11 +702,11 @@ async function main() {
           messageId: message.message_id,
           message: finalText,
           createdAt: Date.now(),
-          traceId,
+          traceId: randomUUID().slice(0, 8),
           isGroup,
         }
         appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg)
-        console.error(`[feishu-bridge] [trace=${traceId}] forwarded to claudetalk: ${finalText.substring(0, 80)}`)
+        console.error(`[feishu-bridge] [trace=${peerMsg.traceId}] forwarded to claudetalk: ${finalText.substring(0, 80)}`)
       } catch (err) {
         console.error(`[feishu-bridge] message handler error: ${err}`)
       }
@@ -779,7 +742,7 @@ async function main() {
   const MAX_WS_RETRY = 300_000
   function startWsClient() {
     wsClient.start({ eventDispatcher }).then(() => {
-      _wsRetryDelay = 15000
+      _wsRetryDelay = 15000 // reset on success
     }).catch((err) => {
       console.error(`[feishu-bridge] WSClient error: ${err}, retrying in ${_wsRetryDelay}ms`)
       setTimeout(startWsClient, _wsRetryDelay)
