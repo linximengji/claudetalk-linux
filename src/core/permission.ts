@@ -10,17 +10,21 @@
 
 export type RiskLevel = 'L0' | 'L1' | 'L2' | 'L3'
 
-// 关键路径正则表——命中这些文件路径的操作自动升级风险等级
+// 关键路径正则表——只在消息中包含类文件路径（含 / 或扩展名）时才匹配，避免聊天内容中的普通词语误触
 const CRITICAL_PATH_PATTERNS = [
   /\.env$/i,
   /settings\.json$/i,
   /\.claudetalk/i,
   /credentials?/i,
   /secrets?/i,
-  /token/i,
   /\.ssh\//i,
   /id_rsa/i,
   /\.git\/config/i,
+]
+
+// 独立高频误触词匹配——对于 token 这类常见聊天词，只在看起来像路径引用时才触发审批
+const CRITICAL_KEYWORDS_PATH_ONLY = [
+  /token/i,
 ]
 
 // 高风险命令关键词——消息中包含时直接 L3
@@ -51,9 +55,16 @@ export const HIGH_RISK_TOOLS = new Set(['Bash', 'Agent', 'Delete'])
 // 中危工具名
 export const MEDIUM_RISK_TOOLS = new Set(['Write', 'Edit'])
 
+/** 判断消息是否包含类文件路径特征（有 / 或 . 扩展名），避免聊天正文误触 */
+function hasPathLike(message: string): boolean {
+  return /[/\\]/.test(message) || /\.[a-zA-Z0-9]{1,6}\b/.test(message)
+}
+
 /** 检查消息路径是否命中关键路径 */
 function matchesCriticalPath(message: string): boolean {
-  return CRITICAL_PATH_PATTERNS.some(p => p.test(message))
+  if (CRITICAL_PATH_PATTERNS.some(p => p.test(message))) return true
+  if (hasPathLike(message) && CRITICAL_KEYWORDS_PATH_ONLY.some(p => p.test(message))) return true
+  return false
 }
 
 /** 评估消息风险等级 */
