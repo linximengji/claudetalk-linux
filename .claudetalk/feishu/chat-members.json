@@ -1,0 +1,19 @@
+{
+  "_bot_self": [
+    {
+      "name": "claude code",
+      "type": "bot",
+      "openId": "ou_30b0945025fcfe9bbda426671f750e2b",
+      "appId": "cli_aa838f41f9f8dbe7"
+    }
+  ],
+  "oc_b8af2c5c41d7e7c488c3f51e979c1e50": [
+    {
+      "name": "claude code",
+      "type": "bot",
+      "openId": "ou_30b0945025fcfe9bbda426671f750e2b",
+      "unionId": "on_e73cb43c05cbd5aad62bd410bda606b2",
+      "appId": "cli_aa838f41f9f8dbe7"
+    }
+  ]
+}

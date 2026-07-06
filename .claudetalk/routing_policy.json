@@ -1,0 +1,9 @@
+{
+  "token_plan": {
+    "credits_remaining": 23873.63,
+    "credits_total": 25000,
+    "days_to_expiry": 30,
+    "plan_start_ts": "2026-06-26T00:00:00",
+    "last_updated_at": "2026-07-03T15:22:03Z"
+  }
+}

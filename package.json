@@ -1,0 +1,51 @@
+{
+  "name": "claudetalk",
+  "version": "0.2.0",
+  "description": "Connect Claude Code to DingTalk - chat with Claude Code via DingTalk bot",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "claudetalk": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc && npx shx mkdir -p dist/template && npx shx cp src/template/context-message.template dist/template/ && npx shx cp src/template/CLAUDE.md dist/template/ && npx shx cp src/template/agent_auto_config.json dist/template/",
+    "dev": "bun run ./src/cli.ts",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src/",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "shx": "^0.4.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "claude-code",
+    "dingtalk",
+    "chatbot",
+    "cli"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/suyin58/claudetalk.git"
+  },
+  "files": [
+    "dist",
+    "package.json",
+    "README.md"
+  ],
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.7.0",
+    "@opentelemetry/exporter-trace-otlp-proto": "^0.219.0",
+    "@opentelemetry/instrumentation-http": "^0.219.0",
+    "@opentelemetry/sdk-node": "^0.219.0",
+    "discord.js": "^14.25.1",
+    "socks-proxy-agent": "^8.0.5"
+  },
+  "overrides": {
+    "undici": "^7.0.0",
+    "axios": "^1.15.0"
+  }
+}

@@ -1,0 +1,1 @@
+{"version":3,"file":"config.d.ts","sourceRoot":"","sources":["../../src/feishu-shared/config.ts"],"names":[],"mappings":"AAMA,MAAM,WAAW,YAAY;IAC3B,KAAK,EAAE,MAAM,CAAA;IACb,SAAS,EAAE,MAAM,CAAA;IACjB,gBAAgB,EAAE,MAAM,CAAA;IACxB,oBAAoB,EAAE,MAAM,CAAA;CAC7B;AAED,wBAAgB,gBAAgB,CAAC,OAAO,EAAE,MAAM,GAAG,YAAY,GAAG,IAAI,CAkCrE"}

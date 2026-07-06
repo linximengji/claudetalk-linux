@@ -1,0 +1,1 @@
+{"version":3,"file":"classifier.d.ts","sourceRoot":"","sources":["../../src/core/classifier.ts"],"names":[],"mappings":"AA6BA,MAAM,MAAM,YAAY,GAAG,WAAW,GAAG,cAAc,GAAG,WAAW,CAAA;AAgDrE,wBAAsB,oBAAoB,CACxC,OAAO,EAAE,MAAM,EACf,KAAK,EAAE,MAAM,EACb,SAAS,EAAE,MAAM,EAAE,GAClB,OAAO,CAAC,YAAY,CAAC,CAyDvB"}

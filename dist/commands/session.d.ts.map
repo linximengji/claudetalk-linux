@@ -1,0 +1,1 @@
+{"version":3,"file":"session.d.ts","sourceRoot":"","sources":["../../src/commands/session.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAGH,OAAO,KAAK,EAAE,OAAO,EAAE,qBAAqB,EAAE,MAAM,aAAa,CAAA;AAejE,wBAAsB,oBAAoB,CACxC,IAAI,EAAE,MAAM,EACZ,OAAO,EAAE,qBAAqB,EAC9B,OAAO,EAAE,OAAO,EAChB,OAAO,EAAE,MAAM,EACf,OAAO,CAAC,EAAE,MAAM,GACf,OAAO,CAAC,OAAO,CAAC,CA6BlB"}
