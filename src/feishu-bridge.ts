@@ -682,6 +682,9 @@ async function main() {
       touchWsActivity()
       const event = data as any
       const messageId = event.message?.message_id
+      const chatType = event.message?.chat_type
+      const senderOpenId = event.sender?.sender_id?.open_id
+      console.error("[feishu-bridge] RAW event: msgId=" + (messageId || '?') + " chat_type=" + (chatType || '?') + " sender=" + (senderOpenId || '?'))
       const now = Date.now()
       if (messageId && processedEventIds.has(messageId) && now - processedEventIds.get(messageId)! < DEDUP_TTL) return
       if (messageId) processedEventIds.set(messageId, now)
@@ -776,8 +779,8 @@ async function main() {
       }, api)
     },
 
-    'im.message.reaction.created_v1': () => { touchWsActivity() },
-    'im.message.reaction.deleted_v1': () => { touchWsActivity() },
+    'im.message.reaction.created_v1': () => { touchWsActivity(); console.error("[feishu-bridge] RAW event: reaction.created_v1") },
+    'im.message.reaction.deleted_v1': () => { touchWsActivity(); console.error("[feishu-bridge] RAW event: reaction.deleted_v1") },
   })
 
   // WSClient — exponential backoff reconnect
