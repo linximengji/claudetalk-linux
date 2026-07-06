@@ -648,18 +648,6 @@ async function main() {
   // Event dedup
   const processedEventIds = new Map<string, number>()
 
-  // WS silence detection: log if no event received for 30min (diagnostic only).
-  // We do NOT close the client here — the SDK's autoReconnect handles network drops,
-  // and manual close() prevents restart since WSClient is single-use per the SDK API.
-  let _lastEventTs = Date.now()
-  const WS_SILENCE_MS = 30 * 60 * 1000
-  const _wsSilenceTimer = setInterval(() => {
-    const idle = Date.now() - _lastEventTs
-    if (idle >= WS_SILENCE_MS) {
-      console.error("[feishu-bridge] WS silence for " + Math.round(idle / 1000) + "s (diagnostic, no action taken)")
-    }
-  }, 60_000)
-  function touchWsActivity() { _lastEventTs = Date.now() }
   const DEDUP_TTL = 24 * 60 * 60 * 1000
   setInterval(() => {
     const now = Date.now()
@@ -679,12 +667,8 @@ async function main() {
   const eventDispatcher = new Lark.EventDispatcher({})
   eventDispatcher.register({
     'im.message.receive_v1': async (data: any) => {
-      touchWsActivity()
       const event = data as any
       const messageId = event.message?.message_id
-      const chatType = event.message?.chat_type
-      const senderOpenId = event.sender?.sender_id?.open_id
-      console.error("[feishu-bridge] RAW event: msgId=" + (messageId || '?') + " chat_type=" + (chatType || '?') + " sender=" + (senderOpenId || '?'))
       const now = Date.now()
       if (messageId && processedEventIds.has(messageId) && now - processedEventIds.get(messageId)! < DEDUP_TTL) return
       if (messageId) processedEventIds.set(messageId, now)
@@ -763,7 +747,6 @@ async function main() {
     },
 
     'card.action.trigger': (data: unknown) => {
-      touchWsActivity()
       const d = data as Record<string, unknown>
       const action = d.action as Record<string, unknown> | undefined
       const value = (action?.value as Record<string, unknown>) || {}
@@ -779,8 +762,8 @@ async function main() {
       }, api)
     },
 
-    'im.message.reaction.created_v1': () => { touchWsActivity(); console.error("[feishu-bridge] RAW event: reaction.created_v1") },
-    'im.message.reaction.deleted_v1': () => { touchWsActivity(); console.error("[feishu-bridge] RAW event: reaction.deleted_v1") },
+    'im.message.reaction.created_v1': () => {},
+    'im.message.reaction.deleted_v1': () => {},
   })
 
   // WSClient — exponential backoff reconnect
@@ -794,7 +777,6 @@ async function main() {
   function startWsClient() {
     wsClient.start({ eventDispatcher }).then(() => {
       _wsRetryDelay = 15000
-      _lastEventTs = Date.now()
     }).catch((err) => {
       console.error(`[feishu-bridge] WSClient error: ${err}, retrying in ${_wsRetryDelay}ms`)
       setTimeout(startWsClient, _wsRetryDelay)
