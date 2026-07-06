@@ -405,7 +405,7 @@ const MAX_SESSION_RETRY_COUNT = 2
 // 所有失败类型的总重试次数（包括 session 失效、process crash、超时等）
 const MAX_RETRY_COUNT = 2
 // claude 进程最大等待时间（ms），超过此时间未响应视为挂起
-const CLAUDE_TIMEOUT_MS = 180_000
+const CLAUDE_TIMEOUT_MS = 240_000
 
 // 自动压缩的 input token 阈值，超过此值时在响应后异步触发 /compact
 const ASYNC_COMPACT_THRESHOLD = 200_000
@@ -839,7 +839,8 @@ async function _execClaude(options: CallClaudeOptions, retryCount = 0): Promise<
 
         // P3: Broad retry for non-session errors (process crash, timeout, etc.)
         if (retryCount < MAX_RETRY_COUNT) {
-          logger(`[claude] Exit code ${code}, retrying (attempt ${retryCount + 1}/${MAX_RETRY_COUNT})`)
+          const logSig = stderr ? stderr.slice(0, 80) : (stdout ? stdout.slice(0, 80) : 'no output')
+          logger(`[claude] Exit code ${code}, retrying (attempt ${retryCount + 1}/${MAX_RETRY_COUNT}) signal=${logSig}`)
           _execClaude(options, retryCount + 1).then(resolve).catch(reject)
           return
         }
@@ -1203,7 +1204,8 @@ async function _execClaudeStreaming(
 
         // P3: Broad retry for non-session errors in streaming path
         if (retryCount < MAX_RETRY_COUNT) {
-          logger(`[claude-stream] Exit code ${code}, retrying (attempt ${retryCount + 1}/${MAX_RETRY_COUNT})`)
+          const logSig = stderr ? stderr.slice(0, 80) : 'no output (streaming)'
+          logger(`[claude-stream] Exit code ${code}, retrying (attempt ${retryCount + 1}/${MAX_RETRY_COUNT}) signal=${logSig}`)
           _execClaudeStreaming(options, onEvent, retryCount + 1)
             .then(resolve)
             .catch(reject)
