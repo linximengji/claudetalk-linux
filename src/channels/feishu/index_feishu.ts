@@ -88,6 +88,7 @@ export class FeishuClient implements Channel {
   private peerPollTimer: ReturnType<typeof setInterval> | null = null;
   private _botInfoRetryTimer: ReturnType<typeof setInterval> | null = null;
   private processedPeerIds = new Map<string, number>(); // id → processedAt
+  private _isBusy = false; // 正在处理消息，后续消息进排队提示
   private botAppName: string | null = null;
   private _lastConvGetter: ((convId: string) => { message: string; reply: string } | null) | null = null;
 
@@ -181,7 +182,7 @@ export class FeishuClient implements Channel {
 
     const succeededIds: string[] = [];
 
-    for (const peerMsg of dedupedMessages) {
+    for (const [idx, peerMsg] of dedupedMessages.entries()) {
       this.processedPeerIds.set(peerMsg.id, now);
       const traceTag = peerMsg.traceId ? `[trace=${peerMsg.traceId}] ` : ''
 
@@ -206,7 +207,12 @@ export class FeishuClient implements Channel {
         }
       }
 
-      // 2b. 走 channelMessageHandler 流程（即 Claude CLI 流程）
+      // 2b. 排队提示：如果前面还有消息正在处理，先发一条排队通知
+      if (idx > 0 || this._isBusy) {
+        this.sendTextMessage(peerMsg.chatId, '📥 消息已收到，等待当前处理完成后自动执行...', peerMsg.isGroup ?? peerMsg.chatId.startsWith('oc_')).catch(() => {})
+      }
+
+      // 2c. 走 channelMessageHandler 流程（即 Claude CLI 流程）
       if (this.channelMessageHandler) {
         const context: ChannelMessageContext = {
           conversationId: peerMsg.chatId,
@@ -217,12 +223,15 @@ export class FeishuClient implements Channel {
           processedMessage: undefined,
         };
 
+        this._isBusy = true;
         try {
           await this.channelMessageHandler(context, peerMsg.message);
           this.logger(`${traceTag}Peer message processed: id=${peerMsg.id}, from=${peerMsg.from}`);
           succeededIds.push(peerMsg.id);
         } catch (error) {
           this.logger(`${traceTag}Failed to process peer message id=${peerMsg.id}: ${error}`);
+        } finally {
+          this._isBusy = false;
         }
       }
     }

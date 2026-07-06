@@ -33,6 +33,7 @@ export class FeishuClient {
     peerPollTimer = null;
     _botInfoRetryTimer = null;
     processedPeerIds = new Map(); // id → processedAt
+    _isBusy = false; // 正在处理消息，后续消息进排队提示
     botAppName = null;
     _lastConvGetter = null;
     // 群成员管理（委托给独立模块）
@@ -105,7 +106,7 @@ export class FeishuClient {
             return;
         this.logger(`Processing ${dedupedMessages.length} peer messages for bot_${botName}.json`);
         const succeededIds = [];
-        for (const peerMsg of dedupedMessages) {
+        for (const [idx, peerMsg] of dedupedMessages.entries()) {
             this.processedPeerIds.set(peerMsg.id, now);
             const traceTag = peerMsg.traceId ? `[trace=${peerMsg.traceId}] ` : '';
             // 1. 给原消息回复 Get 表情（收到确认）
@@ -128,7 +129,11 @@ export class FeishuClient {
                     this.logger(`${traceTag}Failed to handle approval callback: ${err}`);
                 }
             }
-            // 2b. 走 channelMessageHandler 流程（即 Claude CLI 流程）
+            // 2b. 排队提示：如果前面还有消息正在处理，先发一条排队通知
+            if (idx > 0 || this._isBusy) {
+                this.sendTextMessage(peerMsg.chatId, '📥 消息已收到，等待当前处理完成后自动执行...', peerMsg.isGroup ?? peerMsg.chatId.startsWith('oc_')).catch(() => { });
+            }
+            // 2c. 走 channelMessageHandler 流程（即 Claude CLI 流程）
             if (this.channelMessageHandler) {
                 const context = {
                     conversationId: peerMsg.chatId,
@@ -138,6 +143,7 @@ export class FeishuClient {
                     channelType: 'feishu',
                     processedMessage: undefined,
                 };
+                this._isBusy = true;
                 try {
                     await this.channelMessageHandler(context, peerMsg.message);
                     this.logger(`${traceTag}Peer message processed: id=${peerMsg.id}, from=${peerMsg.from}`);
@@ -145,6 +151,9 @@ export class FeishuClient {
                 }
                 catch (error) {
                     this.logger(`${traceTag}Failed to process peer message id=${peerMsg.id}: ${error}`);
+                }
+                finally {
+                    this._isBusy = false;
                 }
             }
         }

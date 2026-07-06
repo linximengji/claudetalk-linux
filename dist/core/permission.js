@@ -48,7 +48,12 @@ export const HIGH_RISK_TOOLS = new Set(['Bash', 'Agent', 'Delete']);
 export const MEDIUM_RISK_TOOLS = new Set(['Write', 'Edit']);
 /** 判断消息是否包含类文件路径特征（有 / 或 . 扩展名），避免聊天正文误触 */
 function hasPathLike(message) {
-    return /[/\\]/.test(message) || /\.[a-zA-Z0-9]{1,6}\b/.test(message);
+    if (/[/\\]/.test(message))
+        return true;
+    // .扩展名：2-6位纯字母，前面不能是数字（排除小数 0.5 等）
+    if (/\.([a-zA-Z]{2,6})\b/.test(message))
+        return true;
+    return false;
 }
 /** 检查消息路径是否命中关键路径 */
 function matchesCriticalPath(message) {

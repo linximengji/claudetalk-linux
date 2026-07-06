@@ -26,6 +26,7 @@ export declare class FeishuClient implements Channel {
     private peerPollTimer;
     private _botInfoRetryTimer;
     private processedPeerIds;
+    private _isBusy;
     private botAppName;
     private _lastConvGetter;
     private readonly chatMemberStore;
