@@ -625,6 +625,9 @@ async function main() {
     const eventDispatcher = new Lark.EventDispatcher({});
     eventDispatcher.register({
         'im.message.receive_v1': async (data) => {
+            // RAW log before any processing — detect if WS event was received at all
+            const _rawMsg = data;
+            console.error("[bridge] RAW im.message.receive_v1: msgId=" + (_rawMsg.message?.message_id || '?') + " type=" + (_rawMsg.message?.chat_type || '?'));
             const event = data;
             const messageId = event.message?.message_id;
             const now = Date.now();
