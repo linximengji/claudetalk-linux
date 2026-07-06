@@ -648,18 +648,22 @@ async function main() {
   // Event dedup
   const processedEventIds = new Map<string, number>()
 
-  // WS silence detection: if no event received for 5 minutes, reconnect
+  // WS silence detection: restart connection if no event received for 15min.
+  // SDK autoReconnect only triggers on disconnect, not on "WS alive but idle".
   let _lastEventTs = Date.now()
-  const WS_SILENCE_MS = 5 * 60 * 1000
+  let _wsReconnecting = false
+  const WS_SILENCE_MS = 15 * 60 * 1000
   const _wsSilenceTimer = setInterval(() => {
+    if (_wsReconnecting) return
     const idle = Date.now() - _lastEventTs
     if (idle >= WS_SILENCE_MS) {
-      console.error(`[feishu-bridge] WS silence for ${Math.round(idle / 1000)}s, triggering reconnect`)
+      _wsReconnecting = true
+      console.error("[feishu-bridge] WS silence for " + Math.round(idle / 1000) + "s, restarting WSClient")
       try { wsClient.close() } catch {}
-      // startWsClient will be called by the WSClient error handler's retry logic
+      _lastEventTs = Date.now()
+      startWsClient()
     }
   }, 60_000)
-  // Update timestamp on any WS event
   function touchWsActivity() { _lastEventTs = Date.now() }
   const DEDUP_TTL = 24 * 60 * 60 * 1000
   setInterval(() => {
@@ -791,7 +795,9 @@ async function main() {
   const MAX_WS_RETRY = 300_000
   function startWsClient() {
     wsClient.start({ eventDispatcher }).then(() => {
-      _wsRetryDelay = 15000 // reset on success
+      _wsRetryDelay = 15000
+      _lastEventTs = Date.now()
+      _wsReconnecting = false
     }).catch((err) => {
       console.error(`[feishu-bridge] WSClient error: ${err}, retrying in ${_wsRetryDelay}ms`)
       setTimeout(startWsClient, _wsRetryDelay)
