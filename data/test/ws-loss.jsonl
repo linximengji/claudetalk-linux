@@ -84,3 +84,4 @@
 {"ts":1783447558152,"action":"detected","message_id":"om_x100b6be7b13bd134b28c6e0edf6fbda","sender":"ou_6a6b52dc63d4051834ae522a3a6e7775","create_time":"1783447551485","preview":"{\"text\":\"你好\"}"}
 {"ts":1783447608142,"action":"detected","message_id":"om_x100b6be04d854ca0b3ce58f3446a2bc","sender":"ou_6a6b52dc63d4051834ae522a3a6e7775","create_time":"1783447604636","preview":"{\"text\":\"没什么就是测试手机飞书通讯\"}"}
 {"ts":1783466506268,"action":"detected","message_id":"om_x100b6becee9fa0a0b4a6219b9dfc590","sender":"ou_6a6b52dc63d4051834ae522a3a6e7775","create_time":"1783466501232","preview":"{\"text\":\"系统运行状态。\"}"}
+{"ts":1783466756320,"action":"detected","message_id":"om_x100b6bece13300a8b36d3e0be683eb8","sender":"ou_6a6b52dc63d4051834ae522a3a6e7775","create_time":"1783466752016","preview":"{\"text\":\"把手机飞书的快捷指格式整理一下，简短清晰，一页可见。\"}"}
