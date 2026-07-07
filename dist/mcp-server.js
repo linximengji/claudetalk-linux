@@ -10,7 +10,9 @@ import { killProcessOnPort } from './core/proc.js';
 import { createLogger } from './core/logger.js';
 import { FeishuApiClient, loadFeishuConfig } from './feishu-shared/index.js';
 const MCP_PORT = parseInt(process.env.MCP_PORT || '9877', 10);
-process.title = 'claudetalk-mcp';
+function setMcpProcessTitle() {
+    process.title = 'claudetalk-mcp';
+}
 const logger = createLogger('mcp-server');
 function loadFeishuConfigLocal(workDir) {
     const cfg = loadFeishuConfig(workDir);
@@ -237,6 +239,7 @@ function handleToolCall(name, args, api, cfg) {
 // ========== HTTP SSE Server ==========
 let serverInstance = null;
 export async function startMcpServer(workDir) {
+    setMcpProcessTitle();
     if (serverInstance)
         return serverInstance;
     const feishuConfig = loadFeishuConfigLocal(workDir);

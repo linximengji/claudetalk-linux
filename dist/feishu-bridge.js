@@ -2,11 +2,11 @@
  * feishu-bridge — 飞书事件接收器独立进程
  *
  * 职责：保持飞书 WebSocket 长连接，接收 im.message.receive_v1 和 card.action.trigger
- * - 系统级指令(/restart, /daemon restart, 服务启停) → 写 marker 文件 / exec 处理
+ * - 系统级指令(服务启停/远程开关) → exec 处理
  * - 非系统消息/卡片 → peer-message 转发给 claudetalk
  *
  * Port 9878 — health check endpoint
- * 由 ops-daemon 管理生命周期，独立于 claudetalk 进程。
+ * 由 systemd 管理生命周期，独立于 claudetalk 进程。
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -14,9 +14,12 @@ import * as http from 'http';
 import { exec } from 'child_process';
 import { request as httpRequest } from 'http';
 import { randomUUID } from 'crypto';
-import * as Lark from '@larksuiteoapi/node-sdk';
+import { createLarkChannel } from '@larksuite/channel';
+import { FEISHU_API_BASE, loadFeishuConfig } from './feishu-shared/index.js';
+// LoggerLevel enum from @larksuiteoapi/node-sdk (re-exported via channel's dependency chain)
+// 0=fatal, 1=error, 2=warn, 3=info, 4=debug, 5=trace
+const LOG_DEBUG = 4;
 import { initLogFile } from './core/logger.js';
-import { FeishuApiClient, FEISHU_API_BASE, loadFeishuConfig, parseFeishuMessage } from './feishu-shared/index.js';
 import { ChatMemberStore } from './channels/feishu/chat-members.js';
 import { isCloudflaredAlive, getCloudflaredPath } from './core/proc.js';
 process.title = 'feishu-bridge';
@@ -24,7 +27,6 @@ import { appendPeerMessage, } from './channels/feishu/peer-message.js';
 import { OPS_DAEMON_DIR } from './core/paths.js';
 // ========== Constants ==========
 const BRIDGE_PORT = parseInt(process.env.FEISHU_BRIDGE_PORT || '9878', 10);
-const OPS_DATA_DIR = path.join(OPS_DAEMON_DIR, 'data');
 const WORK_DIR = process.env.FEISHU_BRIDGE_WORK_DIR || '/home/ubuntu/projects';
 const CLAUDETALK_DIR = path.join(WORK_DIR, '.claudetalk');
 // Service keyword → docker compose service name
@@ -150,130 +152,6 @@ function _dockerStop(svc) {
         });
     });
 }
-// ── System Command Handlers ─────────────────────────────────────────────
-function handleSystemCommand(command, conversationId, api) {
-    const lower = command.toLowerCase();
-    const receiveIdType = conversationId.startsWith('ou_') ? 'open_id' : 'chat_id';
-    // /restart → kill + respawn claudetalk (self-destruct via marker)
-    if (lower === '/restart' || lower === '重启') {
-        // Write marker so the environment's supervisor restarts claudetalk
-        fs.writeFileSync(path.join(OPS_DATA_DIR, '.restart-claudetalk'), '');
-        console.error(`[feishu-bridge] /restart: wrote .restart-claudetalk marker`);
-        return true;
-    }
-    // /daemon restart → kill + respawn ops-daemon (self-destruct via marker)
-    if (lower === '/daemon restart' || lower === '重启daemon') {
-        fs.writeFileSync(path.join(OPS_DATA_DIR, '.restart-daemon'), '');
-        console.error(`[feishu-bridge] /daemon restart: wrote .restart-daemon marker`);
-        return true;
-    }
-    // Service start/stop via docker compose
-    for (const [keyword, svcName] of Object.entries(SERVICE_KEYWORDS)) {
-        if (lower.includes('打开' + keyword) || lower.includes('开启' + keyword)) {
-            _dockerStart(svcName).then(ok => {
-                console.error(`[feishu-bridge] docker start ${svcName}: ${ok}`);
-                if (api) {
-                    api.sendText(conversationId, ok ? `✅ ${svcName} 已启动` : `❌ 启动 ${svcName} 失败`, receiveIdType).catch(() => { });
-                }
-            });
-            return true;
-        }
-        if (lower.includes('关闭' + keyword)) {
-            _dockerStop(svcName).then(ok => {
-                console.error(`[feishu-bridge] docker stop ${svcName}: ${ok}`);
-                if (api) {
-                    api.sendText(conversationId, ok ? `✅ ${svcName} 已关闭` : `❌ 关闭 ${svcName} 失败`, receiveIdType).catch(() => { });
-                }
-            });
-            return true;
-        }
-    }
-    // 开启远程 → kill stale cloudflared + start cloudflared tunnel + start dashboard
-    if (lower.includes('开启远程') || lower.includes('打开远程')) {
-        if (_remoteBusy) {
-            if (api)
-                api.sendText(conversationId, '⏳ 上一个远程操作还在执行中，请稍候...', receiveIdType).catch(() => { });
-            return true;
-        }
-        _remoteBusy = true;
-        if (api)
-            api.sendText(conversationId, '⏳ 远程服务正在启动...', receiveIdType).catch(() => { });
-        // Kill stale cloudflared first, then restart both tunnel and dashboard
-        exec('pkill -f cloudflared 2>/dev/null; sleep 2', { timeout: 10000 }, () => {
-            pythonExec('ops_daemon.tunnel_manager', ['start'], { timeout: 60000 })
-                .then(() => {
-                // Wait for tunnel + dashboard health
-                return Promise.all([
-                    waitForTunnelHealth(60000),
-                    waitForHttpHealth(8765, 60000),
-                ]);
-            })
-                .then(([tunOk, dashOk]) => {
-                _remoteBusy = false;
-                if (tunOk && dashOk) {
-                    if (api)
-                        api.sendText(conversationId, '✅ 远程服务已就绪\nDashboard: :8765\nTunnel: 已连接\n访问: https://term.linximengji.com', receiveIdType).catch(() => { });
-                }
-                else {
-                    const parts = [];
-                    if (!tunOk)
-                        parts.push('Tunnel');
-                    if (!dashOk)
-                        parts.push('Dashboard');
-                    if (api)
-                        api.sendText(conversationId, `❌ ${parts.join('、')} 启动超时，请稍后重试`, receiveIdType).catch(() => { });
-                }
-            })
-                .catch(e => {
-                _remoteBusy = false;
-                if (api)
-                    api.sendText(conversationId, `❌ 远程启动失败: ${e.message?.slice(0, 100) || e}`, receiveIdType).catch(() => { });
-            });
-        });
-        return true;
-    }
-    // 关闭远程 → kill cloudflared + stop dashboard
-    if (lower.includes('关闭远程')) {
-        if (_remoteBusy) {
-            if (api)
-                api.sendText(conversationId, '⏳ 上一个远程操作还在执行中，请稍候...', receiveIdType).catch(() => { });
-            return true;
-        }
-        _remoteBusy = true;
-        if (api)
-            api.sendText(conversationId, '⏳ 正在关闭远程服务...', receiveIdType).catch(() => { });
-        pythonExec('ops_daemon.tunnel_manager', ['stop'], { timeout: 60000 })
-            .then(() => {
-            return Promise.all([
-                httpPortGone(8765, 25000),
-                waitForTunnelGone(15000),
-            ]);
-        })
-            .then(([dashGone, tunGone]) => {
-            _remoteBusy = false;
-            if (dashGone && tunGone) {
-                if (api)
-                    api.sendText(conversationId, '✅ 远程服务已关闭\nDashboard: 已停\nTunnel: 已断开', receiveIdType).catch(() => { });
-            }
-            else {
-                const parts = [];
-                if (!dashGone)
-                    parts.push('Dashboard(8765)');
-                if (!tunGone)
-                    parts.push('cloudflared');
-                if (api)
-                    api.sendText(conversationId, `❌ ${parts.join('、')} 关闭超时，请在电脑上手动关闭`, receiveIdType).catch(() => { });
-            }
-        })
-            .catch(e => {
-            _remoteBusy = false;
-            if (api)
-                api.sendText(conversationId, `❌ 远程关闭失败: ${e.message?.slice(0, 100) || e}`, receiveIdType).catch(() => { });
-        });
-        return true;
-    }
-    return false;
-}
 function pythonExec(module, args, opts) {
     return new Promise((resolve, reject) => {
         const cmd = ['python3', '-m', module, ...args];
@@ -285,18 +163,99 @@ function pythonExec(module, args, opts) {
         });
     });
 }
-/** Check if an execute prompt is system-level (restart/daemon/service related).
- *
- * 覆盖 handleSystemCommand 中所有精确触发词，但不会误吞普通对话。
- * 规则：必须同时包含动作词（打开/关闭/重启）和目标词（远程/jaeger/pact/面板/dashboard/daemon）。
- * 单"重启"、"代理"等无其他动作限定的词容易误判，这里只匹配长句或特定短词。
- */
+// ── System Command Handlers ─────────────────────────────────────────────
+function handleSystemCommand(command, conversationId, channel) {
+    const lower = command.toLowerCase();
+    const maybeSend = (text) => {
+        if (channel)
+            channel.send(conversationId, { text }).catch(() => { });
+    };
+    if (lower === '/restart' || lower === '重启' || lower === '/daemon restart' || lower === '重启daemon') {
+        return true;
+    }
+    for (const [keyword, svcName] of Object.entries(SERVICE_KEYWORDS)) {
+        if (lower.includes('打开' + keyword) || lower.includes('开启' + keyword)) {
+            _dockerStart(svcName).then(ok => {
+                console.error(`[feishu-bridge] docker start ${svcName}: ${ok}`);
+                maybeSend(ok ? `✅ ${svcName} 已启动` : `❌ 启动 ${svcName} 失败`);
+            });
+            return true;
+        }
+        if (lower.includes('关闭' + keyword)) {
+            _dockerStop(svcName).then(ok => {
+                console.error(`[feishu-bridge] docker stop ${svcName}: ${ok}`);
+                maybeSend(ok ? `✅ ${svcName} 已关闭` : `❌ 关闭 ${svcName} 失败`);
+            });
+            return true;
+        }
+    }
+    if (lower.includes('开启远程') || lower.includes('打开远程')) {
+        if (_remoteBusy) {
+            maybeSend('⏳ 上一个远程操作还在执行中，请稍候...');
+            return true;
+        }
+        _remoteBusy = true;
+        maybeSend('⏳ 远程服务正在启动...');
+        exec('pkill -f cloudflared 2>/dev/null; sleep 2', { timeout: 10000 }, () => {
+            pythonExec('ops_daemon.tunnel_manager', ['start'], { timeout: 60000 })
+                .then(() => Promise.all([waitForTunnelHealth(60000), waitForHttpHealth(8765, 60000)]))
+                .then(([tunOk, dashOk]) => {
+                _remoteBusy = false;
+                if (tunOk && dashOk) {
+                    maybeSend('✅ 远程服务已就绪\nDashboard: :8765\nTunnel: 已连接\n访问: https://term.linximengji.com');
+                }
+                else {
+                    const parts = [];
+                    if (!tunOk)
+                        parts.push('Tunnel');
+                    if (!dashOk)
+                        parts.push('Dashboard');
+                    maybeSend(`❌ ${parts.join('、')} 启动超时，请稍后重试`);
+                }
+            })
+                .catch(e => {
+                _remoteBusy = false;
+                maybeSend(`❌ 远程启动失败: ${e.message?.slice(0, 100) || e}`);
+            });
+        });
+        return true;
+    }
+    if (lower.includes('关闭远程')) {
+        if (_remoteBusy) {
+            maybeSend('⏳ 上一个远程操作还在执行中，请稍候...');
+            return true;
+        }
+        _remoteBusy = true;
+        maybeSend('⏳ 正在关闭远程服务...');
+        pythonExec('ops_daemon.tunnel_manager', ['stop'], { timeout: 60000 })
+            .then(() => Promise.all([httpPortGone(8765, 25000), waitForTunnelGone(15000)]))
+            .then(([dashGone, tunGone]) => {
+            _remoteBusy = false;
+            if (dashGone && tunGone) {
+                maybeSend('✅ 远程服务已关闭\nDashboard: 已停\nTunnel: 已断开');
+            }
+            else {
+                const parts = [];
+                if (!dashGone)
+                    parts.push('Dashboard(8765)');
+                if (!tunGone)
+                    parts.push('cloudflared');
+                maybeSend(`❌ ${parts.join('、')} 关闭超时，请在电脑上手动关闭`);
+            }
+        })
+            .catch(e => {
+            _remoteBusy = false;
+            maybeSend(`❌ 远程关闭失败: ${e.message?.slice(0, 100) || e}`);
+        });
+        return true;
+    }
+    return false;
+}
+/** Check if a card execute prompt is system-level. */
 function isSystemExecute(prompt) {
     const lower = prompt.toLowerCase();
-    // 精确短句匹配
     if (lower === '/restart' || lower === '重启' || lower === '/daemon restart' || lower === '重启daemon')
         return true;
-    // 组合模式：动作 + 目标
     const actions = ['打开', '开启', '关闭'];
     const targets = ['远程', 'jaeger', '追踪', 'trace', 'pact', '合约', '面板', 'dashboard'];
     for (const action of actions) {
@@ -307,16 +266,16 @@ function isSystemExecute(prompt) {
                 return true;
         }
     }
-    // 服务关键词（SERVICE_KEYWORDS 中的 key）开头也可触发
-    // "面板"、"jaeger"、"pact"、"dashboard" 作为目标已覆盖，不再额外匹配
     return false;
 }
 // ========== Card Action Handler ==========
-// In-memory pending approvals (mirror from claudetalk's approval-handler.ts)
 const pendingApprovals = new Map();
 const processedApprovals = new Set();
-function handleCardAction(ctx, api) {
-    const { value, actionType, messageId, chatId } = ctx;
+function handleCardAction(ctx, channel, botAppName) {
+    const { action, messageId, chatId } = ctx;
+    const value = (action?.value || {});
+    const actionType = value?.action_type || '';
+    const maybeSend = (text) => { channel.send(chatId, { text }).catch(() => { }); };
     switch (actionType) {
         case 'toast':
             return { toast: { type: 'info', content: value?.message || '已收到' } };
@@ -327,11 +286,9 @@ function handleCardAction(ctx, api) {
             if (!prompt)
                 return { toast: { type: 'error', content: 'execute 需要 prompt 参数' } };
             if (isSystemExecute(prompt)) {
-                // System-level execute — run locally
-                handleSystemCommand(prompt, chatId, api);
+                handleSystemCommand(prompt, chatId, channel);
                 return { toast: { type: 'info', content: '正在执行系统操作...' } };
             }
-            // Non-system execute — forward to claudetalk via peer-message
             const execTraceId = randomUUID().slice(0, 8);
             const peerMsg = {
                 id: randomUUID(),
@@ -364,9 +321,8 @@ function handleCardAction(ctx, api) {
                 }
             }
             catch { /* best-effort */ }
-            // Async update card
             if (messageId) {
-                const card = {
+                channel.updateCard(messageId, {
                     config: { wide_screen_mode: true },
                     header: { title: { tag: 'plain_text', content: '✅ 任务已完成' }, template: 'green' },
                     elements: [
@@ -374,8 +330,7 @@ function handleCardAction(ctx, api) {
                         { tag: 'hr' },
                         { tag: 'note', elements: [{ tag: 'plain_text', content: '已完成' }] },
                     ],
-                };
-                api.updateCard(messageId, card).catch(() => { });
+                }).catch(() => { });
             }
             return { toast: { type: 'info', content: '✅ 已标记完成' } };
         }
@@ -391,18 +346,15 @@ function handleCardAction(ctx, api) {
                     index = JSON.parse(fs.readFileSync(indexFile, 'utf-8'));
                 }
                 index[taskId] = {
-                    status: 'pending',
-                    summary,
-                    type: value?.type || 'task',
-                    source: 'claudetalk',
-                    priority: value?.priority || 'medium',
+                    status: 'pending', summary, type: value?.type || 'task',
+                    source: 'claudetalk', priority: value?.priority || 'medium',
                     created_at: new Date().toISOString(),
                 };
                 fs.writeFileSync(indexFile, JSON.stringify(index, null, 2) + '\n', 'utf-8');
             }
             catch { /* best-effort */ }
             if (messageId) {
-                const card = {
+                channel.updateCard(messageId, {
                     config: { wide_screen_mode: true },
                     header: { title: { tag: 'plain_text', content: '📌 待办已创建' }, template: 'blue' },
                     elements: [
@@ -410,8 +362,7 @@ function handleCardAction(ctx, api) {
                         { tag: 'hr' },
                         { tag: 'note', elements: [{ tag: 'plain_text', content: '已创建' }] },
                     ],
-                };
-                api.updateCard(messageId, card).catch(() => { });
+                }).catch(() => { });
             }
             return { toast: { type: 'info', content: '✅ 待办已创建' } };
         }
@@ -425,19 +376,12 @@ function handleCardAction(ctx, api) {
                 resolve(approved);
                 return { toast: { type: 'info', content: approved ? '✅ 已批准' : '已拒绝' } };
             }
-            // 审批由 claudetalk 注册，bridge 侧 map 通常为空。
-            // 转发给 claudetalk（通过 peer-message），由 claudetalk 的 handleApprovalCallback 处理。
             if (requestId) {
                 const appTraceId = randomUUID().slice(0, 8);
                 const peerMsg = {
-                    id: randomUUID(),
-                    from: 'feishu-bridge',
-                    chatId: ctx.chatId,
-                    messageId: ctx.messageId,
+                    id: randomUUID(), from: 'feishu-bridge', chatId, messageId,
                     message: JSON.stringify({ __approval_callback__: true, requestId, decision: value?.decision }),
-                    createdAt: Date.now(),
-                    traceId: appTraceId,
-                    isGroup: ctx.chatId.startsWith('oc_'),
+                    createdAt: Date.now(), traceId: appTraceId, isGroup: chatId.startsWith('oc_'),
                 };
                 appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg);
                 console.error(`[feishu-bridge] [trace=${appTraceId}] forwarded approval-action to claudetalk: requestId=${requestId}`);
@@ -445,17 +389,11 @@ function handleCardAction(ctx, api) {
             return { toast: { type: 'silent', content: '' } };
         }
         case 'confirm-archive': {
-            // Forward to claudetalk — needs _lastConvGetter which lives in claudetalk
             const archTraceId = randomUUID().slice(0, 8);
             const peerMsg = {
-                id: randomUUID(),
-                from: 'feishu-bridge',
-                chatId,
-                messageId,
-                message: '__confirm_archive__',
-                createdAt: Date.now(),
-                traceId: archTraceId,
-                isGroup: chatId.startsWith('oc_'),
+                id: randomUUID(), from: 'feishu-bridge', chatId, messageId,
+                message: '__confirm_archive__', createdAt: Date.now(),
+                traceId: archTraceId, isGroup: chatId.startsWith('oc_'),
             };
             appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg);
             console.error(`[feishu-bridge] [trace=${archTraceId}] forwarded confirm-archive to claudetalk: chatId=${chatId}`);
@@ -466,7 +404,7 @@ function handleCardAction(ctx, api) {
     }
 }
 // ========== HTTP Server ==========
-function createHealthServer() {
+function createHealthServer(channel) {
     const server = http.createServer((req, res) => {
         const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
         res.setHeader('Access-Control-Allow-Origin', '*');
@@ -480,7 +418,6 @@ function createHealthServer() {
             res.end(JSON.stringify({ status: 'ok', service: 'feishu-bridge' }));
             return;
         }
-        // Graceful shutdown endpoint — daemon calls this before spawning new bridge
         if (url.pathname === '/quit' && req.method === 'POST') {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ status: 'ok', message: 'shutting down' }));
@@ -504,65 +441,97 @@ function createHealthServer() {
             });
             return;
         }
+        if (url.pathname === '/send-media' && req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', async () => {
+                try {
+                    const { filePath, chatId, msgType } = JSON.parse(body);
+                    if (!filePath || !chatId) {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: 'filePath and chatId required' }));
+                        return;
+                    }
+                    if (!fs.existsSync(filePath)) {
+                        res.writeHead(404, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: 'file not found' }));
+                        return;
+                    }
+                    const ext = path.extname(filePath).toLowerCase();
+                    const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'];
+                    const isImage = msgType === 'image' || (msgType !== 'file' && imageExts.includes(ext));
+                    if (isImage) {
+                        const result = await channel.send(chatId, { image: { source: filePath } });
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ ok: true, messageId: result.messageId }));
+                    }
+                    else {
+                        const result = await channel.send(chatId, { file: { source: filePath, fileName: path.basename(filePath) } });
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ ok: true, messageId: result.messageId }));
+                    }
+                }
+                catch (err) {
+                    console.error(`[feishu-bridge] /send-media error: ${err}`);
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: err.message || 'send failed' }));
+                }
+            });
+            return;
+        }
         res.writeHead(404);
         res.end('Not found');
     });
     return server;
 }
-// ========== Message Parsing ==========
-async function parseBridgeMessage(messageType, rawContent, messageId, api) {
-    const accessToken = messageType !== 'text' ? await api.getAccessToken() : '';
-    return parseFeishuMessage(messageType, rawContent, messageId, FEISHU_API_BASE, WORK_DIR, accessToken);
-}
 // ========== Main ==========
 async function main() {
+    // Load feishu config
     const cfg = loadFeishuConfig(WORK_DIR);
     if (!cfg) {
         console.error('[feishu-bridge] No feishu config found, exiting');
         process.exit(1);
     }
+    const { appId, appSecret } = cfg;
     initLogFile(WORK_DIR);
     console.error(`[feishu-bridge] Starting on port ${BRIDGE_PORT}...`);
-    const api = new FeishuApiClient(cfg.appId, cfg.appSecret);
-    // Health check server
-    const server = createHealthServer();
-    server.listen(BRIDGE_PORT, () => {
-        console.error(`[feishu-bridge] Health endpoint: http://localhost:${BRIDGE_PORT}/health`);
-    });
-    // Fetch bot info (for botAppName + botOpenId, used in peer-message and self-message filter)
+    // Fetch bot info
     let botAppName = 'claudetalk';
-    let botOpenId = '';
     try {
-        const botInfo = await api.getAccessToken().then(async (token) => {
-            const resp = await fetch(`${FEISHU_API_BASE}/bot/v3/info`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            return resp.json();
+        const tokenResp = await fetch(`${FEISHU_API_BASE}/auth/v3/tenant_access_token/internal`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
         });
-        if (botInfo.code === 0 && botInfo.bot) {
-            botAppName = botInfo.bot.app_name || 'claudetalk';
-            botOpenId = botInfo.bot.open_id || '';
-            console.error(`[feishu-bridge] Bot app name: ${botAppName}, open_id: ${botOpenId}`);
+        const tokenData = await tokenResp.json();
+        if (tokenData.code === 0) {
+            const botResp = await fetch(`${FEISHU_API_BASE}/bot/v3/info`, {
+                headers: { Authorization: `Bearer ${tokenData.tenant_access_token}` },
+            });
+            const botInfo = await botResp.json();
+            if (botInfo.code === 0 && botInfo.bot) {
+                botAppName = botInfo.bot.app_name || 'claudetalk';
+                console.error(`[feishu-bridge] Bot app name: ${botAppName}, open_id: ${botInfo.bot.open_id || ''}`);
+            }
         }
     }
     catch { /* non-blocking */ }
-    // Retry bot info every 60s if failed
-    const retryBotInfo = setInterval(async () => {
-        try {
-            const token = await api.getAccessToken();
-            const resp = await fetch(`${FEISHU_API_BASE}/bot/v3/info`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const data = await resp.json();
-            if (data.code === 0 && data.bot) {
-                botAppName = data.bot.app_name || 'claudetalk';
-                botOpenId = data.bot.open_id || '';
-                clearInterval(retryBotInfo);
-                console.error(`[feishu-bridge] Bot app name (retry): ${botAppName}, open_id: ${botOpenId}`);
-            }
-        }
-        catch { /* silent */ }
-    }, 60000);
+    // Create Lark channel (replaces WSClient + EventDispatcher)
+    const channel = createLarkChannel({
+        appId,
+        appSecret,
+        loggerLevel: LOG_DEBUG,
+        includeRawEvent: false,
+        keepalive: { enabled: true },
+        outbound: {
+            allowedFileDirs: [WORK_DIR],
+        },
+    });
+    // Start HTTP server (channel available for /send-media uploads)
+    const server = createHealthServer(channel);
+    server.listen(BRIDGE_PORT, () => {
+        console.error(`[feishu-bridge] Health endpoint: http://localhost:${BRIDGE_PORT}/health`);
+    });
     // Self-check: if PID file points to a different PID, exit gracefully
     const bridgePidFile = path.join(CLAUDETALK_DIR, 'feishu-bridge.pid');
     setInterval(() => {
@@ -577,145 +546,100 @@ async function main() {
         }
         catch { /* silent */ }
     }, 30000);
-    // Event dedup
-    const processedEventIds = new Map();
-    const DEDUP_TTL = 24 * 60 * 60 * 1000;
-    setInterval(() => {
-        const now = Date.now();
-        for (const [id, ts] of processedEventIds) {
-            if (now - ts > DEDUP_TTL)
-                processedEventIds.delete(id);
-        }
-    }, 3600_000);
-    // Pending images cache for multi-image messages
-    const pendingImages = new Map();
     // Chat member store (for group message context — optional, best-effort)
     const chatMembersPath = path.join(CLAUDETALK_DIR, 'feishu', 'chat-members.json');
     const chatMemberStore = new ChatMemberStore(chatMembersPath);
-    // EventDispatcher
-    const eventDispatcher = new Lark.EventDispatcher({});
-    eventDispatcher.register({
-        'im.message.receive_v1': async (data) => {
-            const event = data;
-            const messageId = event.message?.message_id;
-            const now = Date.now();
-            if (messageId && processedEventIds.has(messageId) && now - processedEventIds.get(messageId) < DEDUP_TTL)
-                return;
-            if (messageId)
-                processedEventIds.set(messageId, now);
+    // Card action handler
+    channel.on('cardAction', (evt) => {
+        console.error(`[feishu-bridge] card action: type=${evt.action?.value?.action_type} chatId=${evt.chatId}`);
+        return handleCardAction(evt, channel, botAppName);
+    });
+    channel.on('reconnecting', () => console.error('[feishu-bridge] reconnecting...'));
+    channel.on('reconnected', () => console.error('[feishu-bridge] reconnected'));
+    channel.on('error', (err) => console.error(`[feishu-bridge] channel error: ${err.code}: ${err.message}`));
+    // Data frame watchdog: force-reconnect if no data frame arrives within 5 min.
+    // The underlying WS stays OPEN (receives control frames) but Feishu may stop
+    // pushing events — a server-side issue the built-in keepalive can't detect.
+    let lastDataFrame = Date.now();
+    const DATAFRAME_IDLE_MS = 300_000;
+    let dfw = null;
+    const resetDataFrameWatchdog = () => {
+        lastDataFrame = Date.now();
+        if (dfw)
+            clearTimeout(dfw);
+        dfw = setTimeout(async () => {
+            const elapsed = Date.now() - lastDataFrame;
+            console.error(`[feishu-bridge] No data frame for ${elapsed}ms, force-reconnecting...`);
             try {
-                const { sender, message } = event;
-                if (!message || !sender)
-                    return;
-                if (botOpenId && sender.sender_id?.open_id === botOpenId) {
-                    return;
-                }
-                const isGroup = message.chat_type === 'group';
-                const senderId = sender.sender_id?.open_id || '';
-                const conversationId = message.chat_id || '';
-                const { messageText, imagePaths } = await parseBridgeMessage(message.message_type, message.content, message.message_id, api);
-                if (!messageText && imagePaths.length === 0)
-                    return;
-                if (isGroup) {
-                    const mentioned = message.mentions?.some((m) => m.id?.open_id);
-                    if (!mentioned)
-                        return;
-                }
-                let stripped = messageText;
-                if (isGroup && message.mentions) {
-                    for (const m of message.mentions) {
-                        stripped = stripped.replace(`@${m.name}`, '').trim();
-                    }
-                    stripped = stripped.replace(/@_user_\d+/g, '').trim();
-                }
-                if (imagePaths.length > 0 && stripped.trim().length === 0) {
-                    const key = `${conversationId}:${senderId}`;
-                    pendingImages.set(key, [...(pendingImages.get(key) || []), ...imagePaths]);
-                    api.addReaction(message.message_id, 'Get').catch(() => { });
-                    return;
-                }
-                const key = `${conversationId}:${senderId}`;
-                const allPaths = [...(pendingImages.get(key) || []), ...imagePaths];
-                if (pendingImages.has(key))
-                    pendingImages.delete(key);
-                const truncated = allPaths.slice(0, 3);
-                let finalText = stripped;
-                if (truncated.length > 0) {
-                    const hints = truncated.map((e) => {
-                        const pipe = e.indexOf('|');
-                        return pipe !== -1 ? `[文件: ${e.slice(0, pipe)} (${e.slice(pipe + 1)})]` : `[图片: ${e}]`;
-                    }).join('\n');
-                    finalText = [stripped, hints].filter(Boolean).join('\n');
-                }
-                if (!finalText.trim())
-                    return;
-                api.addReaction(message.message_id, 'Get').catch(() => { });
-                if (handleSystemCommand(finalText, conversationId, api))
-                    return;
-                const peerMsg = {
-                    id: randomUUID(),
-                    from: botAppName || 'feishu-bridge',
-                    chatId: conversationId,
-                    messageId: message.message_id,
-                    message: finalText,
-                    createdAt: Date.now(),
-                    traceId: randomUUID().slice(0, 8),
-                    isGroup,
-                };
-                appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg);
-                console.error(`[feishu-bridge] [trace=${peerMsg.traceId}] forwarded to claudetalk: ${finalText.substring(0, 80)}`);
+                await channel.disconnect();
             }
-            catch (err) {
-                console.error(`[feishu-bridge] message handler error: ${err}`);
+            catch { /* ignore */ }
+            try {
+                await channel.connect();
             }
-        },
-        'card.action.trigger': (data) => {
-            const d = data;
-            const action = d.action;
-            const value = action?.value || {};
-            const actionType = value?.action_type || '';
-            const context = d.context;
-            const messageId = context?.open_message_id || '';
-            const chatId = context?.open_chat_id || '';
-            console.error(`[feishu-bridge] card action: ${actionType} chatId=${chatId}`);
-            return handleCardAction({
-                action, value, actionType, messageId, chatId, botAppName,
-            }, api);
-        },
-        'im.message.reaction.created_v1': () => { },
-        'im.message.reaction.deleted_v1': () => { },
+            catch (e) {
+                console.error(`[feishu-bridge] reconnect failed: ${e}`);
+            }
+        }, DATAFRAME_IDLE_MS);
+    };
+    channel.on('message', async (msg) => {
+        resetDataFrameWatchdog();
+        const { messageId, chatId, chatType, content, resources, mentions, mentionedBot, senderName, senderId } = msg;
+        const isGroup = chatType === 'group';
+        console.error(`[feishu-bridge] message: id=${messageId} chatId=${chatId} type=${chatType} text=${content?.substring(0, 60)}`);
+        // Skip messages that mention the bot (group only — handled by SDK policy)
+        // Build text from content + resources (images/files)
+        let finalText = content || '';
+        if (resources && resources.length > 0) {
+            const hints = resources.slice(0, 3).map(r => {
+                if (r.type === 'image')
+                    return `[图片: ${r.fileKey}]`;
+                return `[文件: ${r.fileName || r.fileKey}]`;
+            });
+            finalText = [finalText, ...hints].filter(Boolean).join('\n');
+        }
+        if (!finalText.trim())
+            return;
+        // Add reaction
+        channel.addReaction(messageId, 'Get').catch(() => { });
+        // Check if it's a system command
+        if (handleSystemCommand(finalText, chatId, channel))
+            return;
+        // Forward to claudetalk via peer-message
+        const peerMsg = {
+            id: randomUUID(),
+            from: botAppName || 'feishu-bridge',
+            chatId,
+            messageId,
+            message: finalText,
+            createdAt: Date.now(),
+            traceId: randomUUID().slice(0, 8),
+            isGroup,
+        };
+        appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg);
+        console.error(`[feishu-bridge] [trace=${peerMsg.traceId}] forwarded to claudetalk: chatId=${chatId} text=${finalText.substring(0, 80)}`);
     });
-    // WSClient — exponential backoff reconnect
-    const wsClient = new Lark.WSClient({
-        appId: cfg.appId,
-        appSecret: cfg.appSecret,
-        loggerLevel: Lark.LoggerLevel.debug,
-    });
-    let _wsRetryDelay = 15000;
-    const MAX_WS_RETRY = 300_000;
-    function startWsClient() {
-        wsClient.start({ eventDispatcher }).then(() => {
-            _wsRetryDelay = 15000; // reset on success
-        }).catch((err) => {
-            console.error(`[feishu-bridge] WSClient error: ${err}, retrying in ${_wsRetryDelay}ms`);
-            setTimeout(startWsClient, _wsRetryDelay);
-            _wsRetryDelay = Math.min(_wsRetryDelay * 2, MAX_WS_RETRY);
-        });
-    }
-    startWsClient();
+    // Connect and arm watchdog
+    await channel.connect();
+    resetDataFrameWatchdog();
     // Graceful shutdown
     const shutdown = (signal) => {
         console.error(`[feishu-bridge] Received ${signal}, shutting down...`);
-        try {
-            wsClient.close();
-        }
-        catch { }
+        channel.disconnect().catch(() => { });
         server.close();
+        try {
+            const ppid = process.ppid;
+            const myPid = process.pid;
+            const pcomm = fs.readFileSync(`/proc/${ppid}/comm`, 'utf-8').trim();
+            const myComm = fs.readFileSync(`/proc/${myPid}/comm`, 'utf-8').trim();
+            console.error(`[feishu-bridge] shutdown context: myPID=${myPid} myComm=${myComm} parentPID=${ppid} parentComm=${pcomm}`);
+        }
+        catch { /* non-critical */ }
         process.exit(0);
     };
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
-    console.error(`[feishu-bridge] Running on port ${BRIDGE_PORT}, WSClient connected`);
+    console.error(`[feishu-bridge] Running on port ${BRIDGE_PORT}`);
 }
 main().catch((err) => {
     console.error(`[feishu-bridge] Fatal: ${err}`);

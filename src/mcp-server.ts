@@ -12,7 +12,9 @@ import { FeishuApiClient, loadFeishuConfig } from './feishu-shared/index.js'
 
 const MCP_PORT = parseInt(process.env.MCP_PORT || '9877', 10)
 
-process.title = 'claudetalk-mcp'
+function setMcpProcessTitle() {
+  process.title = 'claudetalk-mcp'
+}
 const logger = createLogger('mcp-server')
 
 // ========== Config Loading ==========
@@ -243,6 +245,7 @@ function handleToolCall(name: string, args: any, api: FeishuApiClient, cfg: Feis
 let serverInstance: http.Server | null = null
 
 export async function startMcpServer(workDir: string): Promise<http.Server | null> {
+  setMcpProcessTitle()
   if (serverInstance) return serverInstance
 
   const feishuConfig = loadFeishuConfigLocal(workDir)

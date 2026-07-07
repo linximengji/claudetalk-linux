@@ -1,0 +1,342 @@
+[feishu-bridge] Starting on port 9878...
+[feishu-bridge] Health endpoint: http://localhost:9878/health
+[feishu-bridge] Bot app name: claude code, open_id: ou_30b0945025fcfe9bbda426671f750e2b
+[info]: [ 'event-dispatch is ready' ]
+[info]: [
+  '[ws]',
+  'receive events or callbacks through persistent connection only available in self-build & Feishu app, Configured in:\n' +
+    '        Developer Console(开发者后台) \n' +
+    '          ->\n' +
+    '        Events and Callbacks(事件与回调)\n' +
+    '          -> \n' +
+    '        Mode of event/callback subscription(订阅方式)\n' +
+    '          -> \n' +
+    '        Receive events/callbacks through persistent connection(使用 长连接 接收事件/回调)'
+]
+[feishu-bridge] Running on port 9878, WSClient connected
+[debug]: [
+  '[ws]',
+  'get connect config success, ws url: wss://msg-frontier.feishu.cn/ws/v2?fpid=493&aid=552564&device_id=7659664962181614791&access_key=c1dd1a07aebbe8cbe1213ff4ed8ef9c8&service_id=33554678&ticket=a77fe147-eaa2-4265-a1f3-af00584367fc'
+]
+[debug]: [ '[ws]', 'ws connect success' ]
+[info]: [ '[ws]', 'ws client ready' ]
+[ws-raw] message received, length=489
+[feishu-bridge] Bot app name (retry): claude code, open_id: ou_30b0945025fcfe9bbda426671f750e2b
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=1277
+[debug]: [
+  '[ws]',
+  'receive message, message_type: event; message_id: 9fb15dd6-6108-42ef-a122-152d21140d9e; trace_id: bd70657dd0da621d763847bc5d63a341; data: undefined'
+]
+[2026-07-07 14:17:21.098] [feishu peer-message] [peer-message] Appended message to bot_claudetalk.json: id=01a73fed-fe3e-46cd-b9d9-a6b4db9be50f, from=claude code
+[feishu-bridge] [trace=dd393f17] forwarded to claudetalk: /new你好
+[feishu-bridge] ACK: peerId=01a73fed-fe3e-46cd-b9d9-a6b4db9be50f trace=dd393f17 status=ok
+[ws-raw] message received, length=489
+[ws-raw] message received, length=1271
+[debug]: [
+  '[ws]',
+  'receive message, message_type: event; message_id: c81cba54-9747-47ff-8108-bc26cc2c97a0; trace_id: 9009aaa07a1fa8521755ae8e9bda4371; data: undefined'
+]
+[2026-07-07 14:19:16.986] [feishu peer-message] [peer-message] Appended message to bot_claudetalk.json: id=74610eb3-f9e2-4259-9a89-4ac74b5460a1, from=claude code
+[feishu-bridge] [trace=36d9aecf] forwarded to claudetalk: /new
+[feishu-bridge] ACK: peerId=74610eb3-f9e2-4259-9a89-4ac74b5460a1 trace=36d9aecf status=ok
+[ws-raw] message received, length=1294
+[debug]: [
+  '[ws]',
+  'receive message, message_type: event; message_id: 2dbf09c4-414b-49c9-baf4-c91d4ccb2e3f; trace_id: 9511b26e7f9394be36bc373df5df0e81; data: undefined'
+]
+[2026-07-07 14:19:27.938] [feishu peer-message] [peer-message] Appended message to bot_claudetalk.json: id=1e46a26d-19c7-4731-817a-7f7076df016a, from=claude code
+[feishu-bridge] [trace=c946078c] forwarded to claudetalk: 测试手机飞书通信。
+[ws-raw] message received, length=489
+[feishu-bridge] ACK: peerId=1e46a26d-19c7-4731-817a-7f7076df016a trace=c946078c status=ok
+[ws-raw] message received, length=1362
+[debug]: [
+  '[ws]',
+  'receive message, message_type: event; message_id: c938631f-560d-45c2-8ef6-5c5db19ac6e5; trace_id: 5a0ed0b5e47e0401c5ee4ded9529a055; data: undefined'
+]
+[2026-07-07 14:21:07.729] [feishu peer-message] [peer-message] Appended message to bot_claudetalk.json: id=53054411-4a3d-4978-8239-c3ad1700e41d, from=claude code
+[feishu-bridge] [trace=61e85141] forwarded to claudetalk: 统计一下最近24小时的模型路由记录，看看是不是符合我们的设计预期。
+[ws-raw] message received, length=489
+[feishu-bridge] ACK: peerId=53054411-4a3d-4978-8239-c3ad1700e41d trace=61e85141 status=ok
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=2437
+[debug]: [
+  '[ws]',
+  'receive message, message_type: event; message_id: 716bc6c3-bf54-4602-a9d6-baa07f04421d; trace_id: 356f2bf8ac19443f421876aec8670f0b; data: undefined'
+]
+[2026-07-07 17:54:27.025] [feishu peer-message] [peer-message] Appended message to bot_claudetalk.json: id=fa025a57-bb22-4917-a722-19eb6dfa20ed, from=claude code
+[feishu-bridge] [trace=24396ac3] forwarded to claudetalk: 两个问题1. 走bypass loop的模型没记录理由，增加日志没问题2. L2 complex对应的不同场景不是 allocator设定了不同的方向吗? 现在
+[feishu-bridge] ACK: peerId=fa025a57-bb22-4917-a722-19eb6dfa20ed trace=24396ac3 status=ok
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=1288
+[debug]: [
+  '[ws]',
+  'receive message, message_type: event; message_id: c6e8f7e2-137a-4860-9ec6-a52fcd14cf31; trace_id: 3106161dfa7b4d806a96b23e7fdb5354; data: undefined'
+]
+[2026-07-07 18:04:43.260] [feishu peer-message] [peer-message] Appended message to bot_claudetalk.json: id=68d3f6c1-cda1-4d49-834a-d5a70c951d87, from=claude code
+[feishu-bridge] [trace=cb32ef0e] forwarded to claudetalk: 测试结果怎么样
+[ws-raw] message received, length=489
+[feishu-bridge] ACK: peerId=68d3f6c1-cda1-4d49-834a-d5a70c951d87 trace=cb32ef0e status=ok
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=1322
+[debug]: [
+  '[ws]',
+  'receive message, message_type: event; message_id: 9ddda210-8f7e-4418-a1a1-9d7822856b8b; trace_id: 65aca26ebe8f6abbb013b4fef04eec84; data: undefined'
+]
+[ws-raw] message received, length=1297
+[debug]: [
+  '[ws]',
+  'receive message, message_type: event; message_id: 9e35975d-c9c5-4cb5-8bc6-c9afab9b910b; trace_id: e72b7d5366ad98373e2581ac2824a1c1; data: undefined'
+]
+[2026-07-07 18:51:37.803] [feishu peer-message] [peer-message] Appended message to bot_claudetalk.json: id=6594cb4e-03df-4b2c-b3a5-8a1aba0b754c, from=claude code
+[feishu-bridge] [trace=67c44796] forwarded to claudetalk: 给我换个发型，染个色
+[图片: /home/ubuntu/projects/.claudetalk/feishu/images/img_v3_0213c_6cc
+[ws-raw] message received, length=1355
+[debug]: [
+  '[ws]',
+  'receive message, message_type: event; message_id: 9f0ef2b5-caac-4290-b34b-e6a33c5a0d73; trace_id: 20260707185142C7CA1D6D22C7D1C3F5EA; data: undefined'
+]
+[feishu-bridge] card action: approval-action chatId=oc_44ba0d81afa9189a67ef99d0bce1124d
+[2026-07-07 18:51:42.761] [feishu peer-message] [peer-message] Appended message to bot_claudetalk.json: id=b04051ef-25d7-4fa3-9446-0fe2cdc8a2b5, from=feishu-bridge
+[feishu-bridge] [trace=ffff3c2e] forwarded approval-action to claudetalk: requestId=apr_mraj43pg_1
+[feishu-bridge] ACK: peerId=b04051ef-25d7-4fa3-9446-0fe2cdc8a2b5 trace=ffff3c2e status=ok
+[feishu-bridge] ACK: peerId=6594cb4e-03df-4b2c-b3a5-8a1aba0b754c trace=67c44796 status=ok
+[ws-raw] message received, length=489
+[ws-raw] message received, length=1294
+[debug]: [
+  '[ws]',
+  'receive message, message_type: event; message_id: ff580b08-fe72-4503-992d-69fc2a804640; trace_id: 8a67ad1671be347342d3b1b75213fef2; data: undefined'
+]
+[2026-07-07 18:54:12.245] [feishu peer-message] [peer-message] Appended message to bot_claudetalk.json: id=a5f79ae8-e0ee-4c04-832f-ebe2722bc984, from=claude code
+[feishu-bridge] [trace=53d1c15b] forwarded to claudetalk: 把文件邮件发给我。
+[ws-raw] message received, length=489
+[feishu-bridge] ACK: peerId=a5f79ae8-e0ee-4c04-832f-ebe2722bc984 trace=53d1c15b status=ok
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=1345
+[debug]: [
+  '[ws]',
+  'receive message, message_type: event; message_id: fdbf1f8c-74c8-49ff-838a-2591d5cf18eb; trace_id: 307ca2e3078cb40096f69404d17434dd; data: undefined'
+]
+[2026-07-07 19:01:31.623] [feishu peer-message] [peer-message] Appended message to bot_claudetalk.json: id=31821e33-595a-4c5e-8533-c1878c0e39d7, from=claude code
+[feishu-bridge] [trace=c58c1584] forwarded to claudetalk: 什么意思？我不是在服务器上执行的这个图片编辑命令吗？
+[ws-raw] message received, length=489
+[feishu-bridge] ACK: peerId=31821e33-595a-4c5e-8533-c1878c0e39d7 trace=c58c1584 status=ok
+[ws-raw] message received, length=489
+[ws-raw] message received, length=1333
+[debug]: [
+  '[ws]',
+  'receive message, message_type: event; message_id: 711a61bd-51ee-4479-8e34-9dd7dfd7abd2; trace_id: 405b24cad60d90b821f5c78768c7363c; data: undefined'
+]
+[2026-07-07 19:04:21.386] [feishu peer-message] [peer-message] Appended message to bot_claudetalk.json: id=ec07d30c-26b8-4d6e-a869-2156c9ecab62, from=claude code
+[feishu-bridge] [trace=f7d8b433] forwarded to claudetalk: 你不能查询一下飞书默认收到的文件会存在哪里？
+[ws-raw] message received, length=489
+[feishu-bridge] ACK: peerId=ec07d30c-26b8-4d6e-a869-2156c9ecab62 trace=f7d8b433 status=ok
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=1312
+[debug]: [
+  '[ws]',
+  'receive message, message_type: event; message_id: 8cadd84c-b76f-4f36-b625-33094a547619; trace_id: 83c5336debd18b5fddc80d3c3f05f5ed; data: undefined'
+]
+[2026-07-07 19:20:39.083] [feishu peer-message] [peer-message] Appended message to bot_claudetalk.json: id=c706572a-0a96-488f-818f-15c711774eb8, from=claude code
+[feishu-bridge] [trace=3aea2b70] forwarded to claudetalk: 收到原图了，按照要求处理图片。
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[feishu-bridge] ACK: peerId=c706572a-0a96-488f-818f-15c711774eb8 trace=3aea2b70 status=ok
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[ws-raw] message received, length=489
+[feishu-bridge] Received SIGTERM, shutting down...
+[info]: [ '[ws]', 'ws client closed manually' ]

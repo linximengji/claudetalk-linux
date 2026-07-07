@@ -988,7 +988,7 @@ async function _execClaudeStreaming(
   const fmtIndex = args.indexOf('--output-format')
   if (fmtIndex !== -1) {
     args[fmtIndex + 1] = 'stream-json'
-    // stream-json requires --verbose in Claude Code 2.1+
+    // stream-json + -p always needs --verbose
     if (!args.includes('--verbose')) {
       args.push('--verbose')
     }

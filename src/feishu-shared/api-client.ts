@@ -21,7 +21,11 @@ function buildMultipartBody(parts: { name: string; value: string; isFile?: boole
     }
     header += '\r\n\r\n'
     chunks.push(enc.encode(header))
-    if (p.data) chunks.push(p.data)
+    if (p.data) {
+      chunks.push(p.data)
+    } else {
+      chunks.push(enc.encode(p.value))
+    }
     chunks.push(enc.encode('\r\n'))
   }
   chunks.push(enc.encode(`--${boundary}--\r\n`))

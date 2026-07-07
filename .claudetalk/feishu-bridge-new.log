@@ -1,0 +1,28 @@
+[feishu-bridge] Starting on port 9878...
+[feishu-bridge] Health endpoint: http://localhost:9878/health
+[feishu-bridge] Bot app name: claude code, open_id: ou_30b0945025fcfe9bbda426671f750e2b
+[info]: [ 'event-dispatch is ready' ]
+[info]: [
+  '[ws]',
+  'receive events or callbacks through persistent connection only available in self-build & Feishu app, Configured in:\n' +
+    '        Developer Console(开发者后台) \n' +
+    '          ->\n' +
+    '        Events and Callbacks(事件与回调)\n' +
+    '          -> \n' +
+    '        Mode of event/callback subscription(订阅方式)\n' +
+    '          -> \n' +
+    '        Receive events/callbacks through persistent connection(使用 长连接 接收事件/回调)'
+]
+[feishu-bridge] Running on port 9878, WSClient connected
+[debug]: [
+  '[ws]',
+  'get connect config success, ws url: wss://msg-frontier.feishu.cn/ws/v2?fpid=493&aid=552564&device_id=7659791621789650129&access_key=db626732c6036a2a425f84b2ab8136d1&service_id=33554678&ticket=39c7a76e-ba85-4982-b201-8df041973aff'
+]
+[debug]: [ '[ws]', 'ws connect success' ]
+[info]: [ '[ws]', 'ws client ready' ]
+[ws-raw] message received, length=487
+[feishu-bridge] ACK: peerId=8214d1f4-744b-4a93-9f4f-864d8d5d08de trace=8fde8415 status=ok
+[feishu-bridge] Bot app name (retry): claude code, open_id: ou_30b0945025fcfe9bbda426671f750e2b
+[ws-raw] message received, length=487
+[feishu-bridge] Received SIGTERM, shutting down...
+[info]: [ '[ws]', 'ws client closed manually' ]

@@ -1,0 +1,119 @@
+
+================================================================================
+ClaudeTalk Log Session Started: 2026-07-08 01:09:02.495
+================================================================================
+
+[2026-07-08 01:09:02.497] [feishu default] [startBot] Starting channel=feishu, workDir=/home/ubuntu/projects/claudetalk
+[2026-07-08 01:09:02.497] [feishu default] [startBot] PID file created: /home/ubuntu/projects/claudetalk/.claudetalk/claudetalk-default.pid
+[2026-07-08 01:09:02.497] [feishu default] [feishu] Peer-message mode — WS managed by feishu-bridge
+[2026-07-08 01:09:02.498] [feishu default] Template synced to /home/ubuntu/.claudetalk/context-message.template
+[2026-07-08 01:09:02.517] [feishu default] Starting peer message polling (botAppName will be resolved at runtime)
+[2026-07-08 01:09:02.553] [feishu default] [startBot] feishu Bot 已启动
+[2026-07-08 01:09:02.554] [feishu default] [notify] No private session found (workDir=/home/ubuntu/projects/claudetalk channel=feishu profile=default) — sessions file may contain group-only entries
+[2026-07-08 01:09:02.872] [feishu default] Bot info initialized: open_id=ou_30b0945025fcfe9bbda426671f750e2b, app_name=claude code, app_id=cli_aa838f41f9f8dbe7
+[2026-07-08 01:09:02.875] [feishu default] Bot info initialized
+[2026-07-08 01:13:49.434] [feishu default] [startBot] SIGTERM received, parentPID=387121 parentComm=node
+
+================================================================================
+ClaudeTalk Log Session Started: 2026-07-08 01:13:51.988
+================================================================================
+
+[2026-07-08 01:13:51.990] [feishu default] [startBot] Starting channel=feishu, workDir=/home/ubuntu/projects/claudetalk
+[2026-07-08 01:13:51.990] [feishu default] [startBot] PID file created: /home/ubuntu/projects/claudetalk/.claudetalk/claudetalk-default.pid
+[2026-07-08 01:13:51.991] [feishu default] [feishu] Peer-message mode — WS managed by feishu-bridge
+[2026-07-08 01:13:51.992] [feishu default] Template synced to /home/ubuntu/.claudetalk/context-message.template
+[2026-07-08 01:13:52.017] [feishu default] Starting peer message polling (botAppName will be resolved at runtime)
+[2026-07-08 01:13:52.058] [feishu default] [startBot] feishu Bot 已启动
+[2026-07-08 01:13:52.058] [feishu default] [notify] No private session found (workDir=/home/ubuntu/projects/claudetalk channel=feishu profile=default) — sessions file may contain group-only entries
+[2026-07-08 01:13:52.446] [feishu default] Bot info initialized: open_id=ou_30b0945025fcfe9bbda426671f750e2b, app_name=claude code, app_id=cli_aa838f41f9f8dbe7
+[2026-07-08 01:13:52.448] [feishu default] Bot info initialized
+[2026-07-08 01:15:17.290] [feishu default] [startBot] SIGTERM received, parentPID=1 parentComm=systemd
+
+================================================================================
+ClaudeTalk Log Session Started: 2026-07-08 01:16:04.686
+================================================================================
+
+[2026-07-08 01:16:04.688] [feishu default] [startBot] Starting channel=feishu, workDir=/home/ubuntu/projects/claudetalk
+[2026-07-08 01:16:04.688] [feishu default] [startBot] PID file created: /home/ubuntu/projects/claudetalk/.claudetalk/claudetalk-default.pid
+[2026-07-08 01:16:04.689] [feishu default] [feishu] Peer-message mode — WS managed by feishu-bridge
+[2026-07-08 01:16:04.689] [feishu default] Template synced to /home/ubuntu/.claudetalk/context-message.template
+[2026-07-08 01:16:04.709] [feishu default] Starting peer message polling (botAppName will be resolved at runtime)
+[2026-07-08 01:16:04.746] [feishu default] [startBot] feishu Bot 已启动
+[2026-07-08 01:16:04.746] [feishu default] [notify] No private session found (workDir=/home/ubuntu/projects/claudetalk channel=feishu profile=default) — sessions file may contain group-only entries
+[2026-07-08 01:16:05.035] [feishu default] Bot info initialized: open_id=ou_30b0945025fcfe9bbda426671f750e2b, app_name=claude code, app_id=cli_aa838f41f9f8dbe7
+[2026-07-08 01:16:05.037] [feishu default] Bot info initialized
+[2026-07-08 01:23:23.095] [feishu default] [startBot] SIGTERM received, parentPID=1 parentComm=systemd
+
+================================================================================
+ClaudeTalk Log Session Started: 2026-07-08 01:31:23.504
+================================================================================
+
+[2026-07-08 01:31:23.507] [feishu default] [startBot] Starting channel=feishu, workDir=/home/ubuntu/projects/claudetalk
+[2026-07-08 01:31:23.507] [feishu default] [startBot] PID file created: /home/ubuntu/projects/claudetalk/.claudetalk/claudetalk-default.pid
+[2026-07-08 01:31:23.508] [feishu default] [feishu] Peer-message mode — WS managed by feishu-bridge
+[2026-07-08 01:31:23.508] [feishu default] Template synced to /home/ubuntu/.claudetalk/context-message.template
+[2026-07-08 01:31:23.528] [feishu default] Starting peer message polling (botAppName will be resolved at runtime)
+[2026-07-08 01:31:23.565] [feishu default] [startBot] feishu Bot 已启动
+[2026-07-08 01:31:23.566] [feishu default] [notify] No private session found (workDir=/home/ubuntu/projects/claudetalk channel=feishu profile=default) — sessions file may contain group-only entries
+[2026-07-08 01:31:23.811] [feishu default] Bot info initialized: open_id=ou_30b0945025fcfe9bbda426671f750e2b, app_name=claude code, app_id=cli_aa838f41f9f8dbe7
+[2026-07-08 01:31:23.813] [feishu default] Bot info initialized
+[2026-07-08 01:32:17.686] [feishu default] [startBot] SIGTERM received, parentPID=1 parentComm=systemd
+
+================================================================================
+ClaudeTalk Log Session Started: 2026-07-08 01:32:17.932
+================================================================================
+
+[2026-07-08 01:32:17.934] [feishu default] [startBot] Starting channel=feishu, workDir=/home/ubuntu/projects/claudetalk
+[2026-07-08 01:32:17.935] [feishu default] [startBot] PID file created: /home/ubuntu/projects/claudetalk/.claudetalk/claudetalk-default.pid
+[2026-07-08 01:32:17.935] [feishu default] [feishu] Peer-message mode — WS managed by feishu-bridge
+[2026-07-08 01:32:17.935] [feishu default] Template synced to /home/ubuntu/.claudetalk/context-message.template
+[2026-07-08 01:32:17.956] [feishu default] Starting peer message polling (botAppName will be resolved at runtime)
+[2026-07-08 01:32:17.993] [feishu default] [startBot] feishu Bot 已启动
+[2026-07-08 01:32:17.994] [feishu default] [notify] No private session found (workDir=/home/ubuntu/projects/claudetalk channel=feishu profile=default) — sessions file may contain group-only entries
+[2026-07-08 01:32:18.239] [feishu default] Bot info initialized: open_id=ou_30b0945025fcfe9bbda426671f750e2b, app_name=claude code, app_id=cli_aa838f41f9f8dbe7
+[2026-07-08 01:32:18.242] [feishu default] Bot info initialized
+[2026-07-08 01:49:39.352] [feishu default] [startBot] SIGTERM received, parentPID=1 parentComm=systemd
+
+================================================================================
+ClaudeTalk Log Session Started: 2026-07-08 01:49:39.832
+================================================================================
+
+[2026-07-08 01:49:39.834] [feishu default] [startBot] Starting channel=feishu, workDir=/home/ubuntu/projects/claudetalk
+[2026-07-08 01:49:39.835] [feishu default] [startBot] PID file created: /home/ubuntu/projects/claudetalk/.claudetalk/claudetalk-default.pid
+[2026-07-08 01:49:39.835] [feishu default] [feishu] Peer-message mode — WS managed by feishu-bridge
+[2026-07-08 01:49:39.835] [feishu default] Template synced to /home/ubuntu/.claudetalk/context-message.template
+[2026-07-08 01:49:39.857] [feishu default] Starting peer message polling (botAppName will be resolved at runtime)
+[2026-07-08 01:49:39.894] [feishu default] [startBot] feishu Bot 已启动
+[2026-07-08 01:49:39.895] [feishu default] [notify] No private session found (workDir=/home/ubuntu/projects/claudetalk channel=feishu profile=default) — sessions file may contain group-only entries
+[2026-07-08 01:49:40.190] [feishu default] Bot info initialized: open_id=ou_30b0945025fcfe9bbda426671f750e2b, app_name=claude code, app_id=cli_aa838f41f9f8dbe7
+[2026-07-08 01:49:40.191] [feishu default] Bot info initialized
+[2026-07-08 02:00:19.123] [feishu default] [startBot] SIGTERM received, parentPID=1 parentComm=systemd
+
+================================================================================
+ClaudeTalk Log Session Started: 2026-07-08 02:00:19.362
+================================================================================
+
+[2026-07-08 02:00:19.364] [feishu default] [startBot] Starting channel=feishu, workDir=/home/ubuntu/projects/claudetalk
+[2026-07-08 02:00:19.364] [feishu default] [startBot] PID file created: /home/ubuntu/projects/claudetalk/.claudetalk/claudetalk-default.pid
+[2026-07-08 02:00:19.364] [feishu default] [feishu] Peer-message mode — WS managed by feishu-bridge
+[2026-07-08 02:00:19.365] [feishu default] Template synced to /home/ubuntu/.claudetalk/context-message.template
+[2026-07-08 02:00:19.385] [feishu default] Starting peer message polling (botAppName will be resolved at runtime)
+[2026-07-08 02:00:19.421] [feishu default] [startBot] feishu Bot 已启动
+[2026-07-08 02:00:19.422] [feishu default] [notify] No private session found (workDir=/home/ubuntu/projects/claudetalk channel=feishu profile=default) — sessions file may contain group-only entries
+[2026-07-08 02:00:19.691] [feishu default] Bot info initialized: open_id=ou_30b0945025fcfe9bbda426671f750e2b, app_name=claude code, app_id=cli_aa838f41f9f8dbe7
+[2026-07-08 02:00:19.692] [feishu default] Bot info initialized
+[2026-07-08 02:02:19.237] [feishu default] [startBot] SIGTERM received, parentPID=1 parentComm=systemd
+
+================================================================================
+ClaudeTalk Log Session Started: 2026-07-08 02:02:19.480
+================================================================================
+
+[2026-07-08 02:02:19.482] [feishu default] [startBot] Starting channel=feishu, workDir=/home/ubuntu/projects/claudetalk
+[2026-07-08 02:02:19.482] [feishu default] [startBot] PID file created: /home/ubuntu/projects/claudetalk/.claudetalk/claudetalk-default.pid
+[2026-07-08 02:02:19.483] [feishu default] [feishu] Peer-message mode — WS managed by feishu-bridge
+[2026-07-08 02:02:19.483] [feishu default] Template synced to /home/ubuntu/.claudetalk/context-message.template
+[2026-07-08 02:02:19.504] [feishu default] Starting peer message polling (botAppName will be resolved at runtime)
+[2026-07-08 02:02:19.542] [feishu default] [startBot] feishu Bot 已启动
+[2026-07-08 02:02:19.543] [feishu default] [notify] No private session found (workDir=/home/ubuntu/projects/claudetalk channel=feishu profile=default) — sessions file may contain group-only entries
+[2026-07-08 02:02:19.779] [feishu default] Bot info initialized: open_id=ou_30b0945025fcfe9bbda426671f750e2b, app_name=claude code, app_id=cli_aa838f41f9f8dbe7
+[2026-07-08 02:02:19.781] [feishu default] Bot info initialized

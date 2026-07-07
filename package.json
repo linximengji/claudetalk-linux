@@ -37,7 +37,7 @@
     "README.md"
   ],
   "dependencies": {
-    "@larksuiteoapi/node-sdk": "^1.7.0",
+    "@larksuite/channel": "^0.3.0",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.219.0",
     "@opentelemetry/instrumentation-http": "^0.219.0",
     "@opentelemetry/sdk-node": "^0.219.0",

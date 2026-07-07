@@ -99,10 +99,13 @@ export class FeishuClient implements Channel {
   private readonly logger: (msg: string) => void;
 
   /** bridge ACK 端点（仅 feishu 通道使用） */
+  private readonly bridgeUrl: string;
   private readonly bridgeAckUrl: string;
 
   constructor(config: FeishuChannelConfig) {
-    this.bridgeAckUrl = `http://127.0.0.1:${process.env.FEISHU_BRIDGE_PORT || '9878'}/ack`
+    const bridgePort = process.env.FEISHU_BRIDGE_PORT || '9878'
+    this.bridgeUrl = `http://127.0.0.1:${bridgePort}`
+    this.bridgeAckUrl = `${this.bridgeUrl}/ack`
     this.config = config;
     const workDir = config.workDir || process.cwd();
     this.claudetalkDir = path.join(workDir, '.claudetalk');
@@ -745,6 +748,28 @@ export class FeishuClient implements Channel {
     if (content === '⏳ 处理中...') {
       this.logger(`[send-处理中-stack] ${new Error().stack?.split('\n').slice(2, 6).join(' | ')}`)
     }
+
+    // Check if content contains a local image path to upload via feishu-bridge
+    const imgMatch = content.match(/\[图片:\s*(.+?)\]|!\[.*?\]\((.+?)\)/)
+    const imgPath = imgMatch?.[1] || imgMatch?.[2]
+    if (imgPath && fs.existsSync(imgPath)) {
+      try {
+        const receiveIdType = conversationId.startsWith('ou_') ? 'open_id' : 'chat_id'
+        const resp = await fetch(`${this.bridgeUrl}/send-image`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imagePath: imgPath, chatId: conversationId, receiveIdType }),
+        })
+        const data = await resp.json() as any
+        if (data.ok) {
+          this.logger(`[feishu] sent image to ${conversationId}: ${imgPath}`)
+          return data.image_key || ''
+        }
+      } catch (err) {
+        this.logger(`[feishu] send image via bridge failed: ${err}`)
+      }
+    }
+
     const response = await this.sendTextMessage(conversationId, content, isGroup);
     const messageId = response.data?.message_id || '';
     return messageId;

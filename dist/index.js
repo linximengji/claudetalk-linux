@@ -410,6 +410,12 @@ export async function startBot(options) {
     });
     process.on('SIGTERM', () => {
         _markPhase('sigterm');
+        try {
+            const ppid = process.ppid;
+            const pcomm = readFileSync(`/proc/${ppid}/comm`, 'utf-8').trim();
+            logger(`[startBot] SIGTERM received, parentPID=${ppid} parentComm=${pcomm}`);
+        }
+        catch { /* non-critical */ }
         drainThenExit('SIGTERM').catch(() => process.exit(0));
     });
     // 捕获自然退出（event loop empty），同步写 exit-marker.json
@@ -1003,8 +1009,8 @@ export async function startBot(options) {
         const lastSession = findLastActivePrivateSession(workDir, channelType, profile);
         if (lastSession?.userId) {
             logger(`[notify] Found last private session userId=${lastSession.userId} convId=${lastSession.conversationId}`);
-            _notifyTarget = lastSession.userId;
-            await channel.sendOnlineNotification(lastSession.userId, workDir).catch((error) => {
+            _notifyTarget = lastSession.conversationId;
+            await channel.sendOnlineNotification(lastSession.conversationId, workDir).catch((error) => {
                 logger(`[notify] 上线通知发送失败: ${error}`);
             });
         }

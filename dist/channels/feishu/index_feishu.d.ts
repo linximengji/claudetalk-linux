@@ -33,6 +33,7 @@ export declare class FeishuClient implements Channel {
     private readonly chatMemberResolver;
     private readonly logger;
     /** bridge ACK 端点（仅 feishu 通道使用） */
+    private readonly bridgeUrl;
     private readonly bridgeAckUrl;
     constructor(config: FeishuChannelConfig);
     /**

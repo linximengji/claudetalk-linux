@@ -1,0 +1,23 @@
+
+🚀 ClaudeTalk 启动中...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📁 工作目录: /home/ubuntu/projects
+🎭 角色: default
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[2026-07-07 14:01:20.403] [feishu default] [startBot] Starting channel=feishu, workDir=/home/ubuntu/projects
+[2026-07-07 14:01:20.404] [feishu default] [startBot] ERROR: Another instance (PID 66222) is already running for profile="default"
+[startBot] ERROR: Another instance (PID 66222) is already running for profile="default"
+[startBot] Run --restart to restart, or kill PID 66222 first.
+[2026-07-07 22:29:44] [manual test] Checking feishu-bridge status
+[2026-07-07T17:09:02.493Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk
+[2026-07-07T17:13:20.788Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk
+[2026-07-07T17:13:31.239Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk
+[2026-07-07T17:13:41.507Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk
+[2026-07-07T17:13:51.987Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk
+[2026-07-07T17:16:04.685Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk
+[2026-07-07T17:31:23.504Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk
+[2026-07-07T17:32:17.931Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk
+[2026-07-07T17:49:39.831Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk
+[2026-07-07T18:00:19.361Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk
+[2026-07-07T18:02:19.479Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk

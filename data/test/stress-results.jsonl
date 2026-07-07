@@ -1,0 +1,20 @@
+{"test_id":"concurrent-0","scenario":"concurrent","step":1,"start_ms":1783426477377,"elapsed_ms":4009,"result":"ok","details":"ack received","extra":{"total_count":5,"msg_id":"1ecee553"}}
+{"test_id":"concurrent-1","scenario":"concurrent","step":2,"start_ms":1783426477377,"elapsed_ms":4009,"result":"ok","details":"ack received","extra":{"total_count":5,"msg_id":"86582cb2"}}
+{"test_id":"concurrent-2","scenario":"concurrent","step":3,"start_ms":1783426477377,"elapsed_ms":4009,"result":"ok","details":"ack received","extra":{"total_count":5,"msg_id":"319ead0c"}}
+{"test_id":"concurrent-3","scenario":"concurrent","step":4,"start_ms":1783426477377,"elapsed_ms":4009,"result":"ok","details":"ack received","extra":{"total_count":5,"msg_id":"22ebc029"}}
+{"test_id":"concurrent-4","scenario":"concurrent","step":5,"start_ms":1783426477377,"elapsed_ms":4009,"result":"ok","details":"ack received","extra":{"total_count":5,"msg_id":"ceef49af"}}
+{"test_id":"slowCC-msg1","scenario":"slowCC","step":1,"start_ms":1783426481387,"elapsed_ms":2604,"result":"ok","details":"waited 2604ms in queue","extra":{"queue_position":1}}
+{"test_id":"slowCC-msg2","scenario":"slowCC","step":2,"start_ms":1783426481387,"elapsed_ms":2403,"result":"ok","details":"waited 2403ms in queue","extra":{"queue_position":2}}
+{"test_id":"slowCC-msg3","scenario":"slowCC","step":3,"start_ms":1783426481387,"elapsed_ms":2202,"result":"ok","details":"waited 2202ms in queue","extra":{"queue_position":3}}
+{"test_id":"rapid-0","scenario":"rapid","step":1,"start_ms":1783426483993,"elapsed_ms":7015,"result":"ok","details":"ack received"}
+{"test_id":"rapid-1","scenario":"rapid","step":2,"start_ms":1783426483993,"elapsed_ms":7015,"result":"ok","details":"ack received"}
+{"test_id":"rapid-2","scenario":"rapid","step":3,"start_ms":1783426483993,"elapsed_ms":7015,"result":"ok","details":"ack received"}
+{"test_id":"rapid-3","scenario":"rapid","step":4,"start_ms":1783426483993,"elapsed_ms":7015,"result":"ok","details":"ack received"}
+{"test_id":"rapid-4","scenario":"rapid","step":5,"start_ms":1783426483993,"elapsed_ms":7015,"result":"ok","details":"ack received"}
+{"test_id":"rapid-5","scenario":"rapid","step":6,"start_ms":1783426483993,"elapsed_ms":7015,"result":"ok","details":"ack received"}
+{"test_id":"rapid-6","scenario":"rapid","step":7,"start_ms":1783426483993,"elapsed_ms":7015,"result":"ok","details":"ack received"}
+{"test_id":"rapid-7","scenario":"rapid","step":8,"start_ms":1783426483993,"elapsed_ms":7015,"result":"ok","details":"ack received"}
+{"test_id":"rapid-8","scenario":"rapid","step":9,"start_ms":1783426483993,"elapsed_ms":7015,"result":"ok","details":"ack received"}
+{"test_id":"rapid-9","scenario":"rapid","step":10,"start_ms":1783426483993,"elapsed_ms":7015,"result":"ok","details":"ack received"}
+{"test_id":"bridgeRestart-phase1","scenario":"bridgeRestart","step":1,"start_ms":1783426491009,"elapsed_ms":2004,"result":"ok","details":"pre-restart message"}
+{"test_id":"bridgeRestart-phase2","scenario":"bridgeRestart","step":2,"start_ms":1783426491009,"elapsed_ms":6010,"result":"ok","details":"post-restart message"}
