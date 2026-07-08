@@ -85,3 +85,8 @@
 {"ts":1783447608142,"action":"detected","message_id":"om_x100b6be04d854ca0b3ce58f3446a2bc","sender":"ou_6a6b52dc63d4051834ae522a3a6e7775","create_time":"1783447604636","preview":"{\"text\":\"没什么就是测试手机飞书通讯\"}"}
 {"ts":1783466506268,"action":"detected","message_id":"om_x100b6becee9fa0a0b4a6219b9dfc590","sender":"ou_6a6b52dc63d4051834ae522a3a6e7775","create_time":"1783466501232","preview":"{\"text\":\"系统运行状态。\"}"}
 {"ts":1783466756320,"action":"detected","message_id":"om_x100b6bece13300a8b36d3e0be683eb8","sender":"ou_6a6b52dc63d4051834ae522a3a6e7775","create_time":"1783466752016","preview":"{\"text\":\"把手机飞书的快捷指格式整理一下，简短清晰，一页可见。\"}"}
+{"ts":1783469287435,"action":"detected","message_id":"om_x100b6bed00c9a0b0b28de7c66591a04","sender":"ou_6a6b52dc63d4051834ae522a3a6e7775","create_time":"1783469280401","preview":"{\"text\":\"/help\"}"}
+{"ts":1783471528541,"action":"detected","message_id":"om_x100b6bed94a5bca8b14ecb3994c436e","sender":"ou_6a6b52dc63d4051834ae522a3a6e7775","create_time":"1783471526644","preview":"{\"text\":\"/log\"}"}
+{"ts":1783471608503,"action":"detected","message_id":"om_x100b6bed91bc70a0b4c739946fb4fe0","sender":"ou_6a6b52dc63d4051834ae522a3a6e7775","create_time":"1783471607231","preview":"{\"text\":\"/new\"}"}
+{"ts":1783471848528,"action":"detected","message_id":"om_x100b6beda09b34acb32080e12276969","sender":"ou_6a6b52dc63d4051834ae522a3a6e7775","create_time":"1783471845527","preview":"{\"text\":\"/session\"}"}
+{"ts":1783471908585,"action":"detected","message_id":"om_x100b6bedbf6ae8a0b34849882ed95b2","sender":"ou_6a6b52dc63d4051834ae522a3a6e7775","create_time":"1783471898572","preview":"{\"text\":\"运行日报和semi report今天没有试行吗？\"}"}
