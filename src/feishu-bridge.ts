@@ -26,6 +26,16 @@ import { initLogFile } from './core/logger.js'
 import { ChatMemberStore, ChatMemberResolver, resolveAtId } from './channels/feishu/chat-members.js'
 import { isCloudflaredAlive, getCloudflaredPath } from './core/proc.js'
 
+// OpenTelemetry init — exports trace to local Jaeger
+const { NodeSDK } = require('@opentelemetry/sdk-node')
+const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-proto')
+const { HttpInstrumentation } = require('@opentelemetry/instrumentation-http')
+new NodeSDK({
+  serviceName: 'feishu-bridge',
+  traceExporter: new OTLPTraceExporter({ url: 'http://localhost:4317/v1/traces' }),
+  instrumentations: [new HttpInstrumentation()],
+}).start()
+
 process.title = 'feishu-bridge'
 import {
   appendPeerMessage,
@@ -570,20 +580,22 @@ async function main() {
   channel.on('reconnected', () => console.error('[feishu-bridge] reconnected'))
   channel.on('error', (err) => console.error(`[feishu-bridge] channel error: ${err.code}: ${err.message}`))
 
-  // Data frame watchdog: force-reconnect if no data frame arrives within 5 min.
+  // Data frame watchdog: restart the process if no data frame arrives within 120s.
   // The underlying WS stays OPEN (receives control frames) but Feishu may stop
   // pushing events — a server-side issue the built-in keepalive can't detect.
+  // Manual disconnect+connect breaks Feishu's WS event subscription binding
+  // (new WS connection but no events delivered). Exiting lets systemd
+  // (Restart=always) spin up a fresh process with a complete handshake.
   let lastDataFrame = Date.now()
-  const DATAFRAME_IDLE_MS = 300_000
+  const DATAFRAME_IDLE_MS = 120_000
   let dfw: NodeJS.Timeout | null = null
   const resetDataFrameWatchdog = () => {
     lastDataFrame = Date.now()
     if (dfw) clearTimeout(dfw)
-    dfw = setTimeout(async () => {
+    dfw = setTimeout(() => {
       const elapsed = Date.now() - lastDataFrame
-      console.error(`[feishu-bridge] No data frame for ${elapsed}ms, force-reconnecting...`)
-      try { await channel.disconnect() } catch { /* ignore */ }
-      try { await channel.connect() } catch (e) { console.error(`[feishu-bridge] reconnect failed: ${e}`) }
+      console.error(`[feishu-bridge] No data frame for ${elapsed}ms, exiting (systemd will restart)...`)
+      process.exit(0)
     }, DATAFRAME_IDLE_MS)
   }
   channel.on('message', async (msg: NormalizedMessage) => {
@@ -593,7 +605,6 @@ async function main() {
 
     console.error(`[feishu-bridge] message: id=${messageId} chatId=${chatId} type=${chatType} text=${content?.substring(0, 60)}`)
 
-    // Skip messages that mention the bot (group only — handled by SDK policy)
     // Build text from content + resources (images/files)
     let finalText = content || ''
     if (resources && resources.length > 0) {
@@ -605,13 +616,14 @@ async function main() {
     }
     if (!finalText.trim()) return
 
-    // Add reaction
-    channel.addReaction(messageId, 'Get').catch(() => {})
-
-    // Check if it's a system command
+    // Check if it's a system command (fast path, no peer-message needed)
     if (handleSystemCommand(finalText, chatId, channel)) return
 
-    // Forward to claudetalk via peer-message
+    // Write peer-message IMMEDIATELY before any async work.
+    // LarkSDK may drop subsequent WS events while the handler is still
+    // awaiting (ACK not returned). Writing to the file first guarantees
+    // the message is persisted even if the handler times out or crashes.
+    const traceId = randomUUID().slice(0, 8)
     const peerMsg: PeerMessage = {
       id: randomUUID(),
       from: botAppName || 'feishu-bridge',
@@ -619,11 +631,14 @@ async function main() {
       messageId,
       message: finalText,
       createdAt: Date.now(),
-      traceId: randomUUID().slice(0, 8),
+      traceId,
       isGroup,
     }
     appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg)
-    console.error(`[feishu-bridge] [trace=${peerMsg.traceId}] forwarded to claudetalk: chatId=${chatId} text=${finalText.substring(0, 80)}`)
+    console.error(`[feishu-bridge] [trace=${traceId}] forwarded to claudetalk: chatId=${chatId} text=${finalText.substring(0, 80)}`)
+
+    // Add reaction (async, non-blocking — message already persisted)
+    channel.addReaction(messageId, 'Get').catch(() => {})
   })
 
   // Connect and arm watchdog
