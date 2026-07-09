@@ -17,6 +17,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.63.0",
+    "@typescript-eslint/parser": "^8.63.0",
     "shx": "^0.4.0",
     "typescript": "^5.0.0"
   },
