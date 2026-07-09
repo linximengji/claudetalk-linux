@@ -27,14 +27,17 @@ import { ChatMemberStore, ChatMemberResolver, resolveAtId } from './channels/fei
 import { isCloudflaredAlive, getCloudflaredPath } from './core/proc.js'
 
 // OpenTelemetry init — exports trace to local Jaeger
-const { NodeSDK } = require('@opentelemetry/sdk-node')
-const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-proto')
-const { HttpInstrumentation } = require('@opentelemetry/instrumentation-http')
-new NodeSDK({
+import { NodeSDK } from '@opentelemetry/sdk-node'
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto'
+import { HttpInstrumentation } from '@opentelemetry/instrumentation-http'
+const _otelSdk = new NodeSDK({
   serviceName: 'feishu-bridge',
   traceExporter: new OTLPTraceExporter({ url: 'http://localhost:4317/v1/traces' }),
   instrumentations: [new HttpInstrumentation()],
-}).start()
+})
+_otelSdk.start()
+
+process.title = 'feishu-bridge'
 
 process.title = 'feishu-bridge'
 import {
