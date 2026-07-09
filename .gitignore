@@ -1,0 +1,13 @@
+# Secrets
+.claudetalk.json
+
+# Data dirs
+data/
+.claudetalk/
+
+# Build output
+dist/
+
+# Temp
+temp/
+*.log
