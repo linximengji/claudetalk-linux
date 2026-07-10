@@ -1,0 +1,15 @@
+{
+  "oc_44ba0d81afa9189a67ef99d0bce1124d\u0000/home/ubuntu/projects/claudetalk\u0000default\u0000feishu": {
+    "sessionId": "a57df28d-cd49-4569-b978-8ffb921083ef",
+    "lastActiveAt": 1783660669046,
+    "isGroup": false,
+    "conversationId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
+    "userId": "claude code",
+    "subagentEnabled": false,
+    "channel": "feishu",
+    "cumulatedInputTokens": 275347,
+    "toolCallCount": 10,
+    "lastMessage": "运行日报，MCP状态未知是个bug吗？",
+    "lastReply": "现在 MCP 显示 `up`，claudetalk 也显示 `up`。bug 已修复。\n\n**两处 bug 总结：**\n\n1. **service-registry.yaml** — `unit: claudetalk-default.service` → 实际运行的叫 `claudetalk.service`，导致 systemd 检查报 `stopped`\n2. **daily_report** 的 `build_system_section` — 期望 `live.services.mcp_process_names` 字典，但 `_build_live_checks` 根本没传 `services` 字段，导致 MCP 永远显示 \"—\"\n   - 修复：`_build_live_checks` 增加 `\"services\": svcs`，`build_system_section` 改为直接读 `claudetalk-mcp` 状态"
+  }
+}

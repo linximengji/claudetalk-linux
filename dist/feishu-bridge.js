@@ -22,6 +22,17 @@ const LOG_DEBUG = 4;
 import { initLogFile } from './core/logger.js';
 import { ChatMemberStore } from './channels/feishu/chat-members.js';
 import { isCloudflaredAlive, getCloudflaredPath } from './core/proc.js';
+// OpenTelemetry init — exports trace to local Jaeger
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
+import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
+const _otelSdk = new NodeSDK({
+    serviceName: 'feishu-bridge',
+    traceExporter: new OTLPTraceExporter({ url: 'http://localhost:4317/v1/traces' }),
+    instrumentations: [new HttpInstrumentation()],
+});
+_otelSdk.start();
+process.title = 'feishu-bridge';
 process.title = 'feishu-bridge';
 import { appendPeerMessage, } from './channels/feishu/peer-message.js';
 import { OPS_DAEMON_DIR } from './core/paths.js';
@@ -516,13 +527,27 @@ async function main() {
         }
     }
     catch { /* non-blocking */ }
-    // Create Lark channel (replaces WSClient + EventDispatcher)
+    // Create Lark channel (replaces WSClient + EventDispatcher).
+    // SDK provides 3 layers of liveness: ping/pong (120s), pingTimeout (forces
+    // terminate+reconnect when no inbound frame at all), and keepalive watchdog
+    // (forceReconnect on stuck connection; onUnrecoverable = exit so systemd
+    // restarts with a fresh handshake). The old custom "data frame" watchdog
+    // exited whenever no *user message* arrived within 120s — it killed healthy
+    // connections during quiet periods (e.g. overnight) and never detected real
+    // connection death any better than pingTimeout does.
     const channel = createLarkChannel({
         appId,
         appSecret,
         loggerLevel: LOG_DEBUG,
         includeRawEvent: false,
-        keepalive: { enabled: true },
+        keepalive: {
+            enabled: true,
+            onUnrecoverable: (err) => {
+                console.error(`[feishu-bridge] keepalive unrecoverable: ${err}, exiting (systemd will restart)...`);
+                process.exit(0);
+            },
+        },
+        wsConfig: { pingTimeout: 30 },
         outbound: {
             allowedFileDirs: [WORK_DIR],
         },
@@ -546,6 +571,29 @@ async function main() {
         }
         catch { /* silent */ }
     }, 30000);
+    // Data frame watchdog: restart the process if no user message arrives within 5 min.
+    // The SDK's ping/pong keeps the WS wire alive, but Feishu may silently stop
+    // pushing events — a server-side issue that keepalive+pingTimeout can't detect
+    // because the connection itself is healthy. process.exit lets systemd
+    // (Restart=always) spin up a fresh process with a clean WS handshake.
+    // DO NOT shorten this below 300s — the watchdog only resets on user messages
+    // (control frames don't fire channel.on('message')), and false-positive
+    // restarts during quiet periods hurt message delivery.
+    let lastDataFrame = Date.now();
+    const DATAFRAME_IDLE_MS = 300_000;
+    let dfw = null;
+    const resetDataFrameWatchdog = () => {
+        lastDataFrame = Date.now();
+        if (dfw)
+            clearTimeout(dfw);
+        dfw = setTimeout(() => {
+            const elapsed = Date.now() - lastDataFrame;
+            console.error(`[feishu-bridge] No data frame for ${elapsed}ms, exiting (systemd will restart)...`);
+            process.exit(0);
+        }, DATAFRAME_IDLE_MS);
+    };
+    // Arm the watchdog at startup. Every incoming message resets it.
+    resetDataFrameWatchdog();
     // Chat member store (for group message context — optional, best-effort)
     const chatMembersPath = path.join(CLAUDETALK_DIR, 'feishu', 'chat-members.json');
     const chatMemberStore = new ChatMemberStore(chatMembersPath);
@@ -557,37 +605,11 @@ async function main() {
     channel.on('reconnecting', () => console.error('[feishu-bridge] reconnecting...'));
     channel.on('reconnected', () => console.error('[feishu-bridge] reconnected'));
     channel.on('error', (err) => console.error(`[feishu-bridge] channel error: ${err.code}: ${err.message}`));
-    // Data frame watchdog: force-reconnect if no data frame arrives within 5 min.
-    // The underlying WS stays OPEN (receives control frames) but Feishu may stop
-    // pushing events — a server-side issue the built-in keepalive can't detect.
-    let lastDataFrame = Date.now();
-    const DATAFRAME_IDLE_MS = 300_000;
-    let dfw = null;
-    const resetDataFrameWatchdog = () => {
-        lastDataFrame = Date.now();
-        if (dfw)
-            clearTimeout(dfw);
-        dfw = setTimeout(async () => {
-            const elapsed = Date.now() - lastDataFrame;
-            console.error(`[feishu-bridge] No data frame for ${elapsed}ms, force-reconnecting...`);
-            try {
-                await channel.disconnect();
-            }
-            catch { /* ignore */ }
-            try {
-                await channel.connect();
-            }
-            catch (e) {
-                console.error(`[feishu-bridge] reconnect failed: ${e}`);
-            }
-        }, DATAFRAME_IDLE_MS);
-    };
     channel.on('message', async (msg) => {
         resetDataFrameWatchdog();
         const { messageId, chatId, chatType, content, resources, mentions, mentionedBot, senderName, senderId } = msg;
         const isGroup = chatType === 'group';
         console.error(`[feishu-bridge] message: id=${messageId} chatId=${chatId} type=${chatType} text=${content?.substring(0, 60)}`);
-        // Skip messages that mention the bot (group only — handled by SDK policy)
         // Build text from content + resources (images/files)
         let finalText = content || '';
         if (resources && resources.length > 0) {
@@ -600,12 +622,14 @@ async function main() {
         }
         if (!finalText.trim())
             return;
-        // Add reaction
-        channel.addReaction(messageId, 'Get').catch(() => { });
-        // Check if it's a system command
+        // Check if it's a system command (fast path, no peer-message needed)
         if (handleSystemCommand(finalText, chatId, channel))
             return;
-        // Forward to claudetalk via peer-message
+        // Write peer-message IMMEDIATELY before any async work.
+        // LarkSDK may drop subsequent WS events while the handler is still
+        // awaiting (ACK not returned). Writing to the file first guarantees
+        // the message is persisted even if the handler times out or crashes.
+        const traceId = randomUUID().slice(0, 8);
         const peerMsg = {
             id: randomUUID(),
             from: botAppName || 'feishu-bridge',
@@ -613,15 +637,16 @@ async function main() {
             messageId,
             message: finalText,
             createdAt: Date.now(),
-            traceId: randomUUID().slice(0, 8),
+            traceId,
             isGroup,
         };
         appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg);
-        console.error(`[feishu-bridge] [trace=${peerMsg.traceId}] forwarded to claudetalk: chatId=${chatId} text=${finalText.substring(0, 80)}`);
+        console.error(`[feishu-bridge] [trace=${traceId}] forwarded to claudetalk: chatId=${chatId} text=${finalText.substring(0, 80)}`);
+        // Add reaction (async, non-blocking — message already persisted)
+        channel.addReaction(messageId, 'Get').catch(() => { });
     });
-    // Connect and arm watchdog
+    // Connect (liveness now covered by SDK pingTimeout + keepalive.onUnrecoverable)
     await channel.connect();
-    resetDataFrameWatchdog();
     // Graceful shutdown
     const shutdown = (signal) => {
         console.error(`[feishu-bridge] Received ${signal}, shutting down...`);

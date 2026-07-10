@@ -516,6 +516,9 @@ export async function startBot(options) {
                 catch { }
                 return null;
             }
+            function _svc(state, name) {
+                return (state.services ?? []).find((s) => s.name === name) ?? {};
+            }
             const services = [];
             let sysInfo = '', activeProxy = '';
             try {
@@ -525,38 +528,31 @@ export async function startBot(options) {
                 sysInfo = `CPU ${state.system.cpu.pct}% | 内存 ${state.system.memory.pct}% | /:${state.system.disk['/']?.pct ?? '?'}%`;
                 // ClaudeTalk (self process)
                 services.push({ name: 'ClaudeTalk', status: '✅', detail: `PID:${process.pid} ${fmtUptime(process.uptime())}` });
-                // Proxy — from latest.json (no PID needed on Windows-hostile commands)
-                if (state.proxy?.ports) {
-                    const active = String(state.proxy.active_port);
-                    activeProxy = `Proxy(${active === '4000' ? '主' : '备'}) :${active}`;
-                    for (const [port, info] of Object.entries(state.proxy.ports)) {
-                        const p = info;
-                        const label = port === active ? 'Proxy' : 'Proxy(备)';
-                        services.push({ name: label, status: p.status === 'up' ? '✅' : '❌', detail: `:${port}` });
-                    }
+                // Proxy — from legacy proxy field (still has port-level detail)
+                const proxySvc = _svc(state, 'model-proxy');
+                if (proxySvc.status === 'up') {
+                    activeProxy = `Proxy :${proxySvc.port ?? '?'}`;
+                    services.push({ name: 'Proxy', status: '✅', detail: `:${proxySvc.port}` });
                 }
-                // ClaudeTalk services from latest.json
-                if (state.claudetalk?.status === 'up') {
-                    services.push({ name: 'FeishuBot', status: '✅', detail: `PID:${state.claudetalk.pid} ${fmtUptime(state.claudetalk.uptime_seconds)}` });
+                // FeishuBot
+                const ctSvc = _svc(state, 'claudetalk');
+                if (ctSvc.status === 'up') {
+                    services.push({ name: 'FeishuBot', status: '✅', detail: `PID:${ctSvc.pid ?? '?'}` });
                 }
-                if (state.cloudflared?.status === 'up') {
-                    const conn = state.cloudflared.connections ?? '?';
+                // Tunnel
+                const tunnelSvc = _svc(state, 'cloudflared');
+                if (tunnelSvc.status === 'up') {
+                    const conn = tunnelSvc.connections ?? '?';
                     services.push({ name: 'Tunnel', status: '✅', detail: `${conn} 连接` });
                 }
-                if (state.feishu_bridge?.status === 'up') {
-                    services.push({ name: 'FeishuBridge', status: '✅', detail: `PID:${state.feishu_bridge.pid}` });
+                // FeishuBridge
+                const bridgeSvc = _svc(state, 'feishu-bridge');
+                if (bridgeSvc.status === 'up') {
+                    services.push({ name: 'FeishuBridge', status: '✅', detail: `PID:${bridgeSvc.pid ?? '?'}` });
                 }
                 // Daemon
                 const daemonStale = daemonAge > 120;
                 services.push({ name: 'Daemon', status: daemonStale ? '⚠️' : '✅', detail: `${fmtUptime(daemonAge)}前更新` });
-                // Docker compose (jaeger, pact-broker)
-                if (state.docker_compose) {
-                    services.push({ name: 'Docker', status: state.docker_compose.status === 'up' ? '✅' : '❌', detail: state.docker_compose.detail ?? '' });
-                }
-                // Defense layers
-                if (state.defense_layers) {
-                    services.push({ name: '防御层', status: state.defense_layers.status === 'up' ? '✅' : '❌', detail: state.defense_layers.detail ?? '' });
-                }
             }
             catch {
                 services.push({ name: 'Daemon', status: '❌', detail: '状态不可读' });

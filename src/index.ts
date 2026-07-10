@@ -33,6 +33,9 @@ const otelSdk = new NodeSDK({
   traceExporter: new OTLPTraceExporter({ url: "http://localhost:4317/v1/traces" }),
   instrumentations: [new HttpInstrumentation()],
 });
+
+import { trace } from "@opentelemetry/api";
+const _tracer = trace.getTracer("claudetalk");
 otelSdk.start();
 
 export interface StartBotOptions {
@@ -413,6 +416,7 @@ export async function startBot(options: StartBotOptions): Promise<void> {
     activeSubprocesses.clear()
     cleanupPidFile()
     closeLogFile()
+    otelSdk.shutdown()
     process.exit(0)
   }
 
@@ -468,6 +472,19 @@ export async function startBot(options: StartBotOptions): Promise<void> {
 
   // 注册统一消息处理器
   channel.onMessage(async (context: ChannelMessageContext, message: string) => {
+    await _tracer.startActiveSpan("process-message", async (span) => {
+      span.setAttribute("conversation_id", context.conversationId);
+      span.setAttribute("channel_type", channelType);
+      span.setAttribute("is_group", String(context.isGroup));
+      try {
+        await handleMessage(context, message);
+      } finally {
+        span.end();
+      }
+    });
+  });
+
+  async function handleMessage(context: ChannelMessageContext, message: string) {
     // 去掉飞书群聊中的 @机器人 前缀（如 "@_user_1 /new" → "/new"）
     const strippedMessage = message.replace(/^@\S+\s*/, '').trim()
     const command = strippedMessage.toLowerCase()
@@ -1010,7 +1027,7 @@ export async function startBot(options: StartBotOptions): Promise<void> {
       }
       await channel.sendMessage(context.conversationId, errorText, context.isGroup).catch(() => {})
     }
-  })
+  }
 
   // 注册"最近对话"回调，供飞书卡片确认存档使用
   channel.setLastConvGetter?.((convId) => _lastConvPair.get(convId) || null)

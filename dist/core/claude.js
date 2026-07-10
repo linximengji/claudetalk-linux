@@ -285,6 +285,8 @@ const MAX_SESSION_RETRY_COUNT = 2;
 const MAX_RETRY_COUNT = 2;
 // claude 进程最大等待时间（ms），超过此时间未响应视为挂起
 const CLAUDE_TIMEOUT_MS = 240_000;
+// 流式模式下，连续 N ms 无任何 stdout 输出则超时
+const STREAM_IDLE_TIMEOUT_MS = 60_000;
 // 自动压缩的 input token 阈值，超过此值时在响应后异步触发 /compact
 const ASYNC_COMPACT_THRESHOLD = 200_000;
 // 同步压缩阈值：超过此值时在请求前同步等待 /compact 完成
@@ -808,24 +810,31 @@ async function _execClaudeStreaming(options, onEvent, retryCount = 0) {
             shell: false,
         });
         activeSubprocesses.add(child);
-        // Timeout protection: if claude CLI hangs during streaming, kill and retry
-        const timer = setTimeout(() => {
-            logger(`[claude-stream] TIMEOUT after ${CLAUDE_TIMEOUT_MS}ms, killing process`);
-            try {
-                child.kill('SIGTERM');
-            }
-            catch { /* ignore */ }
-            setTimeout(() => { try {
-                child.kill('SIGKILL');
-            }
-            catch { /* ignore */ } }, 3000);
-        }, CLAUDE_TIMEOUT_MS);
+        // Idle timeout: reset on every stdout data, only fires when nothing comes through
+        let _idleTimer;
+        function _resetIdleTimer() {
+            if (_idleTimer)
+                clearTimeout(_idleTimer);
+            _idleTimer = setTimeout(() => {
+                logger(`[claude-stream] IDLE TIMEOUT after ${STREAM_IDLE_TIMEOUT_MS}ms of no output, killing process`);
+                try {
+                    child.kill('SIGTERM');
+                }
+                catch { /* ignore */ }
+                setTimeout(() => { try {
+                    child.kill('SIGKILL');
+                }
+                catch { /* ignore */ } }, 3000);
+            }, STREAM_IDLE_TIMEOUT_MS);
+        }
+        _resetIdleTimer();
         let stderr = '';
         let finalResult = '';
         let finalSessionId = existingSessionId || '';
         let buffer = '';
         child.stderr.on('data', (data) => { stderr += data.toString(); });
         child.stdout.on('data', (data) => {
+            _resetIdleTimer();
             buffer += data.toString();
             const lines = buffer.split('\n');
             buffer = lines.pop() || ''; // 保留不完整的最后一行
@@ -935,7 +944,8 @@ async function _execClaudeStreaming(options, onEvent, retryCount = 0) {
         child.stdin.write(actualMessage);
         child.stdin.end();
         child.on('close', (code) => {
-            clearTimeout(timer);
+            if (_idleTimer)
+                clearTimeout(_idleTimer);
             activeSubprocesses.delete(child);
             if (code !== 0) {
                 const isSessionInvalid = stderr.includes('No conversation found') ||

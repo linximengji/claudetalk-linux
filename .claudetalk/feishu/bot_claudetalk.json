@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "id": "822bcd24-8269-4de8-8013-5e62aa26791f",
+    "from": "claude code",
+    "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
+    "messageId": "om_x100b6a3c4f96a8a4b32f43b965067ac",
+    "message": "运行日报，MCP状态未知是个bug吗？",
+    "createdAt": 1783660566888,
+    "traceId": "58f0f683",
+    "isGroup": false
+  }
+]
