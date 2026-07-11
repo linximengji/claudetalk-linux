@@ -132,11 +132,23 @@ export class FeishuClient {
                     this.logger(`${traceTag}Failed to handle approval callback: ${err}`);
                 }
             }
-            // 2b. 排队提示：如果前面还有消息正在处理，先发一条排队通知
+            // 2b. 存档确认：由 feishu-bridge 转发的 confirm-archive 回调
+            if (peerMsg.message === '__confirm_archive__') {
+                const pair = this._lastConvGetter?.(peerMsg.chatId);
+                if (pair) {
+                    this.execConfirmArchive(peerMsg.chatId, pair).catch((err) => this.logger(`${traceTag}__confirm_archive__ error: ${err}`));
+                }
+                else {
+                    this.logger(`${traceTag}__confirm_archive__: _lastConvGetter returned null`);
+                }
+                succeededIds.push(peerMsg.id);
+                continue;
+            }
+            // 2c. 排队提示：如果前面还有消息正在处理，先发一条排队通知
             if (idx > 0 || this._isBusy) {
                 this.sendTextMessage(peerMsg.chatId, '📥 消息已收到，等待当前处理完成后自动执行...', peerMsg.isGroup ?? peerMsg.chatId.startsWith('oc_')).catch(() => { });
             }
-            // 2c. 走 channelMessageHandler 流程（即 Claude CLI 流程）
+            // 2d. 走 channelMessageHandler 流程（即 Claude CLI 流程）
             if (this.channelMessageHandler) {
                 const context = {
                     conversationId: peerMsg.chatId,
@@ -631,11 +643,10 @@ export class FeishuClient {
         const imgPath = imgMatch?.[1] || imgMatch?.[2];
         if (imgPath && fs.existsSync(imgPath)) {
             try {
-                const receiveIdType = conversationId.startsWith('ou_') ? 'open_id' : 'chat_id';
-                const resp = await fetch(`${this.bridgeUrl}/send-image`, {
+                const resp = await fetch(`${this.bridgeUrl}/send-media`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ imagePath: imgPath, chatId: conversationId, receiveIdType }),
+                    body: JSON.stringify({ filePath: imgPath, chatId: conversationId, msgType: 'image' }),
                 });
                 const data = await resp.json();
                 if (data.ok) {
