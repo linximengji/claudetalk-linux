@@ -531,7 +531,7 @@ async function main() {
         appId,
         appSecret,
         loggerLevel: LOG_DEBUG,
-        includeRawEvent: false,
+        includeRawEvent: true,
         keepalive: { enabled: true },
         outbound: {
             allowedFileDirs: [WORK_DIR],
@@ -568,11 +568,31 @@ async function main() {
     channel.on('reconnected', () => console.error('[feishu-bridge] reconnected'));
     channel.on('error', (err) => console.error(`[feishu-bridge] channel error: ${err.code}: ${err.message}`));
     channel.on('message', async (msg) => {
-        const { messageId, chatId, chatType, content, resources, mentions, mentionedBot, senderName, senderId } = msg;
+        const { messageId, chatId, chatType, content, resources, mentions, mentionedBot, senderName, senderId, rawContentType, raw } = msg;
         const isGroup = chatType === 'group';
-        console.error(`[feishu-bridge] message: id=${messageId} chatId=${chatId} type=${chatType} text=${content?.substring(0, 60)}`);
+        console.error(`[feishu-bridge] message: id=${messageId} chatId=${chatId} type=${chatType} rawType=${rawContentType} text=${content?.substring(0, 60)}`);
         // Build text from content + resources (images/files)
         let finalText = content || '';
+        // Handle location messages — extract lat/lng from raw event
+        if (rawContentType === 'location' && raw) {
+            try {
+                const rawEvent = raw;
+                const msgContent = rawEvent?.event?.message?.content;
+                if (msgContent) {
+                    const loc = typeof msgContent === 'string' ? JSON.parse(msgContent) : msgContent;
+                    if (loc.longitude && loc.latitude) {
+                        finalText = `[位置: ${loc.longitude},${loc.latitude}]`;
+                        if (loc.name)
+                            finalText += ` ${loc.name}`;
+                        if (loc.address)
+                            finalText += ` (${loc.address})`;
+                    }
+                }
+            }
+            catch {
+                // keep existing content if raw parsing fails
+            }
+        }
         if (resources && resources.length > 0) {
             const hints = resources.slice(0, 3).map(r => {
                 if (r.type === 'image')
