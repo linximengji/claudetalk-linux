@@ -73,6 +73,9 @@ export interface StreamEvent {
 }
 /** 活跃中的 claude CLI 子进程，用于 graceful drain */
 export declare const activeSubprocesses: Set<ChildProcess>;
+/** 全局 draining 标志，由 startBot 的 drainThenExit 设置，子进程在重试前检查此标志 */
+export declare let _draining: boolean;
+export declare function setDraining(v: boolean): void;
 export declare function callClaude(options: CallClaudeOptions, retryCount?: number): Promise<string>;
 export declare function callClaudeStreaming(options: CallClaudeOptions, onEvent: (event: StreamEvent) => void, retryCount?: number): Promise<{
     sessionId: string;

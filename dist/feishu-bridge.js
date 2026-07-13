@@ -15,7 +15,7 @@ import { exec } from 'child_process';
 import { request as httpRequest } from 'http';
 import { randomUUID } from 'crypto';
 import { createLarkChannel } from '@larksuite/channel';
-import { FEISHU_API_BASE, loadFeishuConfig } from './feishu-shared/index.js';
+import { FEISHU_API_BASE, loadFeishuConfig, FeishuApiClient } from './feishu-shared/index.js';
 // LoggerLevel enum from @larksuiteoapi/node-sdk (re-exported via channel's dependency chain)
 // 0=fatal, 1=error, 2=warn, 3=info, 4=debug, 5=trace
 const LOG_DEBUG = 4;
@@ -39,6 +39,11 @@ import { OPS_DAEMON_DIR } from './core/paths.js';
 const BRIDGE_PORT = parseInt(process.env.FEISHU_BRIDGE_PORT || '9878', 10);
 const WORK_DIR = process.env.FEISHU_BRIDGE_WORK_DIR || '/home/ubuntu/projects';
 const CLAUDETALK_DIR = path.join(WORK_DIR, '.claudetalk');
+// API poll constants
+const API_POLL_INTERVAL_MS = 4_000;
+const POLL_PAGE_SIZE = 20;
+const BOT_APP_ID = 'cli_aa838f41f9f8dbe7';
+const DEDUP_MAX_PER_CHAT = 200;
 // Service keyword → docker compose service name
 const SERVICE_KEYWORDS = {
     jaeger: 'jaeger', 追踪: 'jaeger', trace: 'jaeger',
@@ -47,6 +52,9 @@ const SERVICE_KEYWORDS = {
 };
 // ========== Remote command in-flight guard ==========
 let _remoteBusy = false;
+// ========== API Poll State ==========
+const _seenMessageIds = new Map();
+let _botOpenId = null;
 // ========== Health Check Helpers (from index.ts) ==========
 const CLOUDFLARED = getCloudflaredPath();
 function httpHealthCheck(port) {
@@ -494,6 +502,163 @@ function createHealthServer(channel) {
     });
     return server;
 }
+// ========== API Polling (primary message reception; WS on('message') kept for logging only) ==========
+/** 首次启动时预热：标记启动时间点之前的历史消息为 seen，不写入 peer-message */
+async function warmupSeen(api, chatIds) {
+    const startedAtMs = Date.now();
+    try {
+        const token = await api.getAccessToken();
+        for (const chatId of chatIds) {
+            const url = `${FEISHU_API_BASE}/im/v1/messages?container_id_type=chat&container_id=${chatId}&page_size=${POLL_PAGE_SIZE}&sort_type=ByCreateTimeDesc`;
+            const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+            const data = await resp.json();
+            if (data.code !== 0 || !data.data?.items)
+                continue;
+            const seen = new Set();
+            for (const item of data.data.items) {
+                // 只标记启动时间之前的历史消息，启动后到达的消息留给后续 poll 处理
+                const createTime = parseInt(item.create_time) || 0;
+                if (createTime < startedAtMs && item.message_id)
+                    seen.add(item.message_id);
+            }
+            _seenMessageIds.set(chatId, seen);
+            console.error(`[feishu-bridge] warmup: marked ${seen.size} messages as seen for ${chatId}`);
+        }
+    }
+    catch (err) {
+        console.error(`[feishu-bridge] warmup error: ${err.message}`);
+    }
+}
+function extractMessageText(item) {
+    const msgType = item.msg_type;
+    try {
+        const body = typeof item.body === 'string' ? JSON.parse(item.body) : (item.body || {});
+        const content = typeof body?.content === 'string' ? JSON.parse(body.content) : (body?.content || {});
+        if (msgType === 'text')
+            return content?.text || '';
+        if (msgType === 'location') {
+            const lat = parseFloat(content?.latitude);
+            const lng = parseFloat(content?.longitude);
+            const name = content?.name || '';
+            if (!isNaN(lat) && !isNaN(lng)) {
+                return `[位置] ${name} (${lat}, ${lng})`;
+            }
+        }
+        if (msgType === 'post') {
+            const parts = [];
+            const postContent = content?.content;
+            if (Array.isArray(postContent)) {
+                for (const paragraph of postContent) {
+                    if (Array.isArray(paragraph)) {
+                        for (const el of paragraph) {
+                            if (el.tag === 'text' && el.text)
+                                parts.push(el.text);
+                        }
+                    }
+                }
+            }
+            const title = content?.title;
+            return title ? [title, ...parts].join('') : parts.join('');
+        }
+    }
+    catch { }
+    return `[${msgType} message]`;
+}
+async function pollMessages(api, claudeTalkDir, chatIds, botAppName) {
+    let token;
+    try {
+        token = await api.getAccessToken();
+    }
+    catch (err) {
+        console.error(`[feishu-bridge] poll: getAccessToken error: ${err.message}`);
+        return;
+    }
+    let totalNew = 0;
+    for (const chatId of chatIds) {
+        const url = `${FEISHU_API_BASE}/im/v1/messages?container_id_type=chat&container_id=${chatId}&page_size=${POLL_PAGE_SIZE}&sort_type=ByCreateTimeDesc`;
+        let resp = null;
+        try {
+            const httpResp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+            resp = await httpResp.json();
+        }
+        catch (err) {
+            console.error(`[feishu-bridge] poll: fetch error for ${chatId}: ${err.message}`);
+            continue;
+        }
+        if (!resp || resp.code !== 0 || !resp.data?.items) {
+            if (resp && resp.code !== 0) {
+                console.error(`[feishu-bridge] poll: API error for ${chatId}: code=${resp.code} msg=${resp.msg}`);
+            }
+            continue;
+        }
+        const items = resp.data.items;
+        const nonBotItems = items.filter((i) => i.sender?.id !== BOT_APP_ID && !_seenMessageIds.get(chatId)?.has(i.message_id));
+        if (nonBotItems.length > 0) {
+            console.error(`[feishu-bridge] poll: ${nonBotItems.length} non-bot unseen items in API response, first msgId=${nonBotItems[0].message_id}`);
+        }
+        let seen = _seenMessageIds.get(chatId);
+        if (!seen) {
+            seen = new Set();
+            _seenMessageIds.set(chatId, seen);
+        }
+        for (const item of items) {
+            const msgId = item.message_id;
+            if (!msgId || seen.has(msgId))
+                continue;
+            if (item.sender?.id === BOT_APP_ID) {
+                seen.add(msgId);
+                continue;
+            }
+            // Group chat: only forward messages that @mention the bot
+            // Private chat (has mentions field with bot itself or no mentions at all): forward all
+            const hasMentions = item.mentions && Array.isArray(item.mentions) && item.mentions.length > 0;
+            if (hasMentions && _botOpenId) {
+                const botMentioned = item.mentions.some((m) => {
+                    const mid = m.id?.open_id || m.open_id || m.id;
+                    return mid === _botOpenId;
+                });
+                if (!botMentioned) {
+                    seen.add(msgId);
+                    continue;
+                }
+            }
+            const messageText = extractMessageText(item);
+            if (!messageText.trim()) {
+                seen.add(msgId);
+                continue;
+            }
+            seen.add(msgId);
+            const _isGroup = chatId.startsWith('oc_');
+            const traceId = randomUUID().slice(0, 8);
+            const peerMsg = {
+                id: randomUUID(),
+                from: botAppName || 'feishu-bridge',
+                chatId,
+                messageId: msgId,
+                message: messageText,
+                createdAt: Date.now(),
+                traceId,
+                isGroup: _isGroup,
+            };
+            appendPeerMessage(claudeTalkDir, 'claudetalk', peerMsg);
+            totalNew++;
+            console.error(`[feishu-bridge] poll: new message chatId=${chatId} msgId=${msgId} text=${messageText.substring(0, 80)}`);
+        }
+    }
+    if (totalNew > 0) {
+        console.error(`[feishu-bridge] poll: found ${totalNew} new message(s)`);
+    }
+}
+function cleanupDedupStore() {
+    for (const [chatId, seen] of _seenMessageIds) {
+        if (seen.size > DEDUP_MAX_PER_CHAT) {
+            const arr = [...seen];
+            const keep = new Set(arr.slice(arr.length - DEDUP_MAX_PER_CHAT / 2));
+            _seenMessageIds.set(chatId, keep);
+            console.error(`[feishu-bridge] dedup: pruned ${chatId} from ${seen.size} to ${keep.size} entries`);
+        }
+    }
+}
 // ========== Main ==========
 async function main() {
     // Load feishu config
@@ -503,6 +668,7 @@ async function main() {
         process.exit(1);
     }
     const { appId, appSecret } = cfg;
+    const apiClient = new FeishuApiClient(appId, appSecret);
     initLogFile(WORK_DIR);
     console.error(`[feishu-bridge] Starting on port ${BRIDGE_PORT}...`);
     // Fetch bot info
@@ -521,7 +687,8 @@ async function main() {
             const botInfo = await botResp.json();
             if (botInfo.code === 0 && botInfo.bot) {
                 botAppName = botInfo.bot.app_name || 'claudetalk';
-                console.error(`[feishu-bridge] Bot app name: ${botAppName}, open_id: ${botInfo.bot.open_id || ''}`);
+                _botOpenId = botInfo.bot.open_id || null;
+                console.error(`[feishu-bridge] Bot app name: ${botAppName}, open_id: ${_botOpenId || ''}`);
             }
         }
     }
@@ -531,7 +698,7 @@ async function main() {
         appId,
         appSecret,
         loggerLevel: LOG_DEBUG,
-        includeRawEvent: true,
+        includeRawEvent: false,
         keepalive: { enabled: true },
         outbound: {
             allowedFileDirs: [WORK_DIR],
@@ -567,70 +734,33 @@ async function main() {
     channel.on('reconnecting', () => console.error('[feishu-bridge] reconnecting...'));
     channel.on('reconnected', () => console.error('[feishu-bridge] reconnected'));
     channel.on('error', (err) => console.error(`[feishu-bridge] channel error: ${err.code}: ${err.message}`));
+    // WS on('message') disabled — message reception handled by API poll.
+    // Keep WS alive for card interactions (approval, execute, toast, etc.)
+    // To re-enable: restore the handler block and comment out the poll timer below.
     channel.on('message', async (msg) => {
-        const { messageId, chatId, chatType, content, resources, mentions, mentionedBot, senderName, senderId, rawContentType, raw } = msg;
-        const isGroup = chatType === 'group';
-        console.error(`[feishu-bridge] message: id=${messageId} chatId=${chatId} type=${chatType} rawType=${rawContentType} text=${content?.substring(0, 60)}`);
-        // Build text from content + resources (images/files)
-        let finalText = content || '';
-        // Handle location messages — extract lat/lng from raw event
-        if (rawContentType === 'location' && raw) {
-            try {
-                const rawEvent = raw;
-                const msgContent = rawEvent?.event?.message?.content;
-                if (msgContent) {
-                    const loc = typeof msgContent === 'string' ? JSON.parse(msgContent) : msgContent;
-                    if (loc.longitude && loc.latitude) {
-                        finalText = `[位置: ${loc.longitude},${loc.latitude}]`;
-                        if (loc.name)
-                            finalText += ` ${loc.name}`;
-                        if (loc.address)
-                            finalText += ` (${loc.address})`;
-                    }
-                }
-            }
-            catch {
-                // keep existing content if raw parsing fails
-            }
-        }
-        if (resources && resources.length > 0) {
-            const hints = resources.slice(0, 3).map(r => {
-                if (r.type === 'image')
-                    return `[图片: ${r.fileKey}]`;
-                return `[文件: ${r.fileName || r.fileKey}]`;
-            });
-            finalText = [finalText, ...hints].filter(Boolean).join('\n');
-        }
-        if (!finalText.trim())
-            return;
-        // Check if it's a system command (fast path, no peer-message needed)
-        if (handleSystemCommand(finalText, chatId, channel))
-            return;
-        // Write peer-message IMMEDIATELY before any async work.
-        // LarkSDK may drop subsequent WS events while the handler is still
-        // awaiting (ACK not returned). Writing to the file first guarantees
-        // the message is persisted even if the handler times out or crashes.
-        const traceId = randomUUID().slice(0, 8);
-        const peerMsg = {
-            id: randomUUID(),
-            from: botAppName || 'feishu-bridge',
-            chatId,
-            messageId,
-            message: finalText,
-            createdAt: Date.now(),
-            traceId,
-            isGroup,
-        };
-        appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg);
-        console.error(`[feishu-bridge] [trace=${traceId}] forwarded to claudetalk: chatId=${chatId} text=${finalText.substring(0, 80)}`);
-        // Add reaction (async, non-blocking — message already persisted)
-        channel.addReaction(messageId, 'Get').catch(() => { });
+        const { messageId, chatId, chatType, content } = msg;
+        console.error(`[feishu-bridge] WS message IGNORED (poll handles it): id=${messageId} chatId=${chatId} type=${chatType} text=${content?.substring(0, 60)}`);
     });
     // Connect (liveness now covered by SDK pingTimeout + keepalive.onUnrecoverable)
     await channel.connect();
+    // Start API polling for message reception (primary path; WS path disabled)
+    const chatIds = ['oc_44ba0d81afa9189a67ef99d0bce1124d'];
+    // Warmup: mark historical messages as seen so they don't flood peer-message on restart
+    await warmupSeen(apiClient, chatIds);
+    console.error(`[feishu-bridge] Starting API poll for ${chatIds.length} chat(s) every ${API_POLL_INTERVAL_MS}ms`);
+    const _pollTimer = setInterval(() => {
+        pollMessages(apiClient, CLAUDETALK_DIR, chatIds, botAppName).catch(err => {
+            console.error(`[feishu-bridge] Poll error: ${err.message}`);
+        });
+    }, API_POLL_INTERVAL_MS);
+    const _dedupCleanupTimer = setInterval(() => {
+        cleanupDedupStore();
+    }, 300_000);
     // Graceful shutdown
     const shutdown = (signal) => {
         console.error(`[feishu-bridge] Received ${signal}, shutting down...`);
+        clearInterval(_pollTimer);
+        clearInterval(_dedupCleanupTimer);
         _otelSdk.shutdown();
         channel.disconnect().catch(() => { });
         server.close();

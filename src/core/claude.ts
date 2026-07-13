@@ -200,7 +200,24 @@ function loadConfigFromFile(filePath: string, profile?: string): ClaudeTalkConfi
     const raw = JSON.parse(content)
 
     if (profile && !raw.profiles?.[profile]) {
-      return null
+      // 检查是否有对应的 agent.md 文件（trip 等独立 agent）
+      const agentMdExists = existsSync(join(process.cwd(), '.claude', 'agents', `${profile}.md`))
+      if (!agentMdExists) return null
+      // agent.md 存在 → 返回基础配置，subagentEnabled=true 启用 agent 模式
+      const envPath = join(process.env.HOME || '~', '.claude', '.env')
+      const config: ClaudeTalkConfig = { channel: 'feishu', subagentEnabled: true }
+      if (existsSync(envPath)) {
+        const envContent = readFileSync(envPath, 'utf-8')
+        const feishuAppId = envContent.match(/^FEISHU_APP_ID=(.+)$/m)?.[1]?.trim()
+        const feishuAppSecret = envContent.match(/^FEISHU_APP_SECRET=(.+)$/m)?.[1]?.trim()
+        if (feishuAppId && feishuAppSecret) {
+          config.feishu = {
+            FEISHU_APP_ID: feishuAppId.replace(/^['"]|['"]$/g, ''),
+            FEISHU_APP_SECRET: feishuAppSecret.replace(/^['"]|['"]$/g, ''),
+          }
+        }
+      }
+      return config
     }
 
     const profileOverride = profile ? (raw.profiles?.[profile] ?? {}) : {}
@@ -424,6 +441,13 @@ const sessionQueues = new Map<string, Promise<void>>()
 
 /** 活跃中的 claude CLI 子进程，用于 graceful drain */
 export const activeSubprocesses = new Set<ChildProcess>()
+
+/** 全局 draining 标志，由 startBot 的 drainThenExit 设置，子进程在重试前检查此标志 */
+export let _draining = false
+
+export function setDraining(v: boolean): void {
+  _draining = v
+}
 
 async function enqueueSession<T>(sessionKey: string, fn: () => Promise<T>): Promise<T> {
   const prev = (sessionQueues.get(sessionKey) || Promise.resolve()).catch(() => {})  // swallow rejection
@@ -840,6 +864,11 @@ async function _execClaude(options: CallClaudeOptions, retryCount = 0): Promise<
         }
 
         // P3: Broad retry for non-session errors (process crash, timeout, etc.)
+        if (_draining || (code === null && stderr.length === 0)) {
+          if (_draining) logger(`[claude] Skip retry: draining`)
+          reject(new Error(`claude subprocess killed (code=${code})`))
+          return
+        }
         if (retryCount < MAX_RETRY_COUNT) {
           const logSig = stderr ? stderr.slice(0, 80) : (stdout ? stdout.slice(0, 80) : 'no output')
           logger(`[claude] Exit code ${code}, retrying (attempt ${retryCount + 1}/${MAX_RETRY_COUNT}) signal=${logSig}`)
@@ -1211,6 +1240,12 @@ async function _execClaudeStreaming(
         }
 
         // P3: Broad retry for non-session errors in streaming path
+        if (_draining || (code === null && stderr.length === 0)) {
+          // 正在 drain 或信号杀死无 stderr → 不重试，不记录冗余错误
+          if (_draining) logger(`[claude-stream] Skip retry: draining`)
+          reject(new Error(`claude subprocess killed (code=${code})`))
+          return
+        }
         if (retryCount < MAX_RETRY_COUNT) {
           const logSig = stderr ? stderr.slice(0, 80) : 'no output (streaming)'
           logger(`[claude-stream] Exit code ${code}, retrying (attempt ${retryCount + 1}/${MAX_RETRY_COUNT}) signal=${logSig}`)
