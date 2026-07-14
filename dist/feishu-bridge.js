@@ -11,7 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
-import { exec } from 'child_process';
+import { exec, spawnSync } from 'child_process';
 import { request as httpRequest } from 'http';
 import { randomUUID } from 'crypto';
 import { createLarkChannel } from '@larksuite/channel';
@@ -609,6 +609,58 @@ async function pollMessages(api, claudeTalkDir, chatIds, botAppName) {
                 seen.add(msgId);
                 continue;
             }
+            const messageText = extractMessageText(item);
+            if (!messageText.trim()) {
+                seen.add(msgId);
+                continue;
+            }
+            // /twin command: route directly to digital twin ingestion, bypass CC
+            // MUST check BEFORE @bot filter — /twin in group chat doesn't need @mention
+            if (messageText.trim().startsWith('/twin')) {
+                const feedContent = messageText.trim().slice(5).trim();
+                if (feedContent) {
+                    const twinPath = '/home/ubuntu/projects/digital-clone';
+                    const tmpFile = `/tmp/twin_feed_${Date.now()}.txt`;
+                    try {
+                        fs.writeFileSync(tmpFile, feedContent, 'utf-8');
+                        const r = spawnSync('python3', [
+                            '-c', [
+                                `import sys; sys.path.insert(0, '${twinPath}')`,
+                                `from twin.ingestion import ingest_text`,
+                                `with open('${tmpFile}', 'r', encoding='utf-8') as f:`,
+                                `  content = f.read()`,
+                                `print(ingest_text('feishu_twin', content))`,
+                            ].join('\n')
+                        ], { timeout: 60_000, encoding: 'utf-8', stdio: 'pipe' });
+                        if (r.error)
+                            throw r.error;
+                        if (r.status !== 0)
+                            throw new Error(`exit code ${r.status}: ${r.stderr?.substring(0, 200) || 'unknown'}`);
+                        console.error(`[feishu-bridge] /twin ingested: ${feedContent.substring(0, 80)} | result=${r.stdout?.substring(0, 100)}`);
+                        // Send success reply — silent feedback so user knows it worked
+                        const receiptType = chatId.startsWith('oc_') ? 'chat_id' : 'open_id';
+                        api.sendText(chatId, '✅ 已摄入数字分身', receiptType).catch((e2) => {
+                            console.error(`[feishu-bridge] /twin reply failed: ${e2.message}`);
+                        });
+                    }
+                    catch (e) {
+                        console.error(`[feishu-bridge] /twin ingestion failed: ${e.message}`);
+                        // Send error reply so user knows something went wrong
+                        const receiptType = chatId.startsWith('oc_') ? 'chat_id' : 'open_id';
+                        api.sendText(chatId, '❌ 摄入失败，请稍后再试', receiptType).catch((e2) => {
+                            console.error(`[feishu-bridge] /twin error reply failed: ${e2.message}`);
+                        });
+                    }
+                    finally {
+                        try {
+                            fs.unlinkSync(tmpFile);
+                        }
+                        catch { }
+                    }
+                }
+                seen.add(msgId);
+                continue;
+            }
             // Group chat: only forward messages that @mention the bot
             // Private chat (has mentions field with bot itself or no mentions at all): forward all
             const hasMentions = item.mentions && Array.isArray(item.mentions) && item.mentions.length > 0;
@@ -621,11 +673,6 @@ async function pollMessages(api, claudeTalkDir, chatIds, botAppName) {
                     seen.add(msgId);
                     continue;
                 }
-            }
-            const messageText = extractMessageText(item);
-            if (!messageText.trim()) {
-                seen.add(msgId);
-                continue;
             }
             seen.add(msgId);
             const _isGroup = chatId.startsWith('oc_');

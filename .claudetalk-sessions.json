@@ -11,5 +11,18 @@
     "toolCallCount": 1,
     "lastMessage": "总结，旅游规划的任务目标和进展",
     "lastReply": "## 旅游规划 — 任务总结\n\n**目标**：在 Claude Code 中实现自驾旅行规划助手，核心能力包括：\n- 定位解析 + 周边搜索（景点/餐厅/酒店/加油站等）\n- 多途经点驾车路线规划\n- 对话式行程管理（确认日期 → 采集偏好 → 输出行程 → JSON 持久化 → 按时提醒 → 结束清理）\n\n**当前进展**：\n| 层级 | 状态 | 说明 |\n|------|------|------|\n| MCP 工具层 (travel-mcp) | **完成** | 3 个工具（定位/POI搜索/路线），高德 API Key 已配置 |\n| 集成注册 (mcp.json + settings) | **完成** | 工具权限已放行，claudetalk 等零改动 |\n| 对话层 (trip agent) | **完成** | 完整 system prompt 就绪，含日期/偏好/JSON 持久化/提醒/清理 |\n| 实际运行 | **未执行** | `trips/` 数据目录不存在，未对用户正式跑过完整流程 |\n\n**待办**：3 个关联任务（MCP 实现、测绘合规、商业化评估）"
+  },
+  "oc_44ba0d81afa9189a67ef99d0bce1124d\u0000/home/ubuntu/projects/claudetalk\u0000default\u0000feishu": {
+    "sessionId": "01652df2-6970-42c2-aa7d-804e87afa4ea",
+    "lastActiveAt": 1784024257783,
+    "isGroup": true,
+    "conversationId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
+    "userId": "claude code",
+    "subagentEnabled": false,
+    "channel": "feishu",
+    "cumulatedInputTokens": 133121,
+    "toolCallCount": 6,
+    "lastMessage": "既然是定时启动，那应该自然是过去24小时之内的数据。",
+    "lastReply": "修好了。改动归纳：\n\n**问题：** 日报的告警摘要和趋势对比用日历天切分，8:30 跑时\"今日\"只有 8h 数据，导致：\n\n- 摘要卡数据不全（只显示今天凌晨起的事件）\n- 趋势对比\"今日\"（8h）vs \"昨日\"（24h）量级不匹配，看不出趋势\n\n**修法（`runner.py`）：**\n\n1. `_load_episodic` 新增 `hours` 参数——按 ts 字段做时间窗口过滤，跨日历天组合\n2. `today_events` → 加载**过去 24 小时**的事件\n3. `yesterday_events` → 加载**再往前 24 小时**的事件（作为趋势对比基线）\n\n现在告警和趋势都与日志扫描一样用 24h 滑动窗口，数据口径统一了。"
   }
 }
