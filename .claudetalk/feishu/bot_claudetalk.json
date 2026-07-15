@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "id": "6b07f9cd-07cb-46e1-a1e2-a63500e84fdf",
+    "from": "claude code",
+    "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
+    "messageId": "om_x100b6a4dcfd570a0b279778a12ddc5b",
+    "message": "你先提取一部分看看，我觉得是跑过了。",
+    "createdAt": 1784125461337,
+    "traceId": "73b43523",
+    "isGroup": true
+  }
+]

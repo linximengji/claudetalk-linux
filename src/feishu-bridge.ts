@@ -10,6 +10,7 @@
  */
 import * as fs from 'fs'
 import * as path from 'path'
+import * as os from 'os'
 import * as http from 'http'
 import { exec, spawnSync } from 'child_process'
 import { request as httpRequest } from 'http'
@@ -632,6 +633,7 @@ async function pollMessages(api: FeishuApiClient, claudeTalkDir: string, chatIds
         if (feedContent) {
           const twinPath = '/home/ubuntu/projects/digital-clone'
           const tmpFile = `/tmp/twin_feed_${Date.now()}.txt`
+          let ingestOk = false
           try {
             fs.writeFileSync(tmpFile, feedContent, 'utf-8')
             const r = spawnSync('python3', [
@@ -646,9 +648,62 @@ async function pollMessages(api: FeishuApiClient, claudeTalkDir: string, chatIds
             if (r.error) throw r.error
             if (r.status !== 0) throw new Error(`exit code ${r.status}: ${r.stderr?.substring(0, 200) || 'unknown'}`)
             console.error(`[feishu-bridge] /twin ingested: ${feedContent.substring(0, 80)} | result=${r.stdout?.substring(0, 100)}`)
-            // Send success reply — silent feedback so user knows it worked
+            ingestOk = true
+
+            // Parse ingestion result for rich feedback
+            const stdout = r.stdout?.trim() || ''
+            let replyText = '✅ 已摄入'
+            try {
+              if (stdout === 'already ingested (duplicate)') {
+                replyText = '♻️ 已摄入（内容重复，跳过）'
+              } else if (stdout.startsWith('{')) {
+                const result = JSON.parse(stdout)
+                const stored = result.stored ?? 0
+                const skipped = result.skipped || ''
+                if (skipped === 'noise') {
+                  replyText = '⏭️ 内容较浅，未收录'
+                } else if (skipped === 'duplicate') {
+                  replyText = '♻️ 内容重复，未收录'
+                } else if (stored > 0) {
+                  const types = result.types || []
+                  const tag = types.join('+') || '记忆'
+                  const p = result.persona_updated ? ' 画像已更新' : ''
+                  replyText = `✅ 已摄入（${tag}${p}）`
+                }
+              }
+            } catch { /* fallback to default */ }
+
+            // If this reply has a root_id, check if it answers a gap card
+            const rootId = item.root_id as string | undefined
+            if (rootId) {
+              const gapStatePath = path.join(os.homedir(), '.claude', 'twin_gap_state.json')
+              try {
+                if (fs.existsSync(gapStatePath)) {
+                  const raw = fs.readFileSync(gapStatePath, 'utf-8')
+                  const state = JSON.parse(raw)
+                  const gaps = state.gaps || []
+                  let matched = false
+                  for (const gap of gaps) {
+                    if (gap.message_id === rootId && !gap.answered) {
+                      gap.answered = true
+                      gap.answered_at = new Date().toISOString()
+                      matched = true
+                    }
+                  }
+                  if (matched) {
+                    fs.writeFileSync(gapStatePath, JSON.stringify(state, null, 2) + '\n', 'utf-8')
+                    replyText += ' 🎯缺口已回答'
+                    console.error(`[feishu-bridge] /twin gap answered: root_id=${rootId}`)
+                  }
+                }
+              } catch (e2: any) {
+                console.error(`[feishu-bridge] /twin gap state update failed: ${e2.message}`)
+              }
+            }
+
+            // Send success reply — rich feedback so user knows what happened
             const receiptType = chatId.startsWith('oc_') ? 'chat_id' : 'open_id'
-            api.sendText(chatId, '✅ 已摄入数字分身', receiptType).catch((e2: any) => {
+            api.sendText(chatId, replyText, receiptType).catch((e2: any) => {
               console.error(`[feishu-bridge] /twin reply failed: ${e2.message}`)
             })
           } catch (e: any) {
