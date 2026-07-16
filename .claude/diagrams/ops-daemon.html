@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Ops Daemon 架构图</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0d1117;color:#c9d1d9;font-family:'Segoe UI',system-ui,sans-serif;padding:30px;display:flex;flex-direction:column;align-items:center}
+h1{font-size:20px;margin-bottom:25px;color:#f0f6fc}
+svg{max-width:1480px;background:#0d1117}
+.node rect{fill:#161b22;stroke:#30363d;stroke-width:1.5;rx:6;ry:6}
+.node .title{font-size:13px;font-weight:600;fill:#f0f6fc}
+.node .sub{font-size:11px;fill:#8b949e}
+.edge{stroke:#58a6ff;stroke-width:1.5;fill:none}
+.edge-label{font-size:10px;fill:#8b949e}
+.edge-data{stroke:#3fb950;stroke-width:1.5;fill:none;stroke-dasharray:6,3}
+.edge-llm{stroke:#d2a8ff;stroke-width:1.5;fill:none;stroke-dasharray:3,3}
+.badge{font-size:9px;fill:#8b949e}
+.section-title{font-size:14px;font-weight:600;fill:#f0f6fc}
+</style>
+</head>
+<body>
+<h1>Ops Daemon 架构图</h1>
+<svg viewBox="0 0 1480 1550">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#58a6ff"/></marker>
+    <marker id="arrow-data" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#3fb950"/></marker>
+    <marker id="arrow-llm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#d2a8ff"/></marker>
+  </defs>
+
+  <!-- ============ 标题 ============ -->
+  <text x="40" y="30" class="section-title">核心循环 (Core Loop)</text>
+  <text x="40" y="50" class="badge">基于 agent-core (async BaseDaemon) · 只监视不维护 · 所有进程管理委托给 systemd</text>
+
+  <rect x="60" y="70" width="360" height="46" rx="6" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="240" y="90" text-anchor="middle" fill="#58a6ff" font-weight="600" font-size="12">ops_daemon/main.py → main()</text>
+  <text x="240" y="106" text-anchor="middle" fill="#8b949e" font-size="10">配置加载 → OpenTelemetry → 注册检查 → 启动 scheduler</text>
+
+  <!-- 循环体 -->
+  <rect x="60" y="135" width="360" height="60" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="240" y="155" text-anchor="middle" fill="#f0f6fc" font-weight="600" font-size="12">BaseDaemon.run() — 60s 检查循环</text>
+  <text x="240" y="173" text-anchor="middle" fill="#8b949e" font-size="10">5s 响应式 sleep（每段检查 .stop）</text>
+  <text x="240" y="188" text-anchor="middle" fill="#8b949e" font-size="10">heartbeat 写两次（前+后）</text>
+
+  <!-- 检查执行 -->
+  <rect x="60" y="215" width="360" height="100" rx="8" fill="#161b22" stroke="#ff7b72" stroke-width="1.5"/>
+  <text x="240" y="235" text-anchor="middle" fill="#ff7b72" font-weight="600" font-size="12">_run_checks() — 顺序执行</text>
+
+  <!-- 10 个检查块 -->
+  <rect x="80" y="248" width="155" height="22" rx="3" fill="#1c2128" stroke="#21262d" stroke-width="0.5"/>
+  <text x="157" y="263" text-anchor="middle" fill="#8b949e" font-size="9">proxy.py · port 4000/4002</text>
+  <rect x="245" y="248" width="155" height="22" rx="3" fill="#1c2128" stroke="#21262d" stroke-width="0.5"/>
+  <text x="322" y="263" text-anchor="middle" fill="#8b949e" font-size="9">system.py · disk/cpu/mem</text>
+  <rect x="80" y="274" width="155" height="22" rx="3" fill="#1c2128" stroke="#21262d" stroke-width="0.5"/>
+  <text x="157" y="289" text-anchor="middle" fill="#8b949e" font-size="9">claudetalk.py · 进程+端口</text>
+  <rect x="245" y="274" width="155" height="22" rx="3" fill="#1c2128" stroke="#21262d" stroke-width="0.5"/>
+  <text x="322" y="289" text-anchor="middle" fill="#8b949e" font-size="9">cloudflared.py · 隧道连接数</text>
+  <rect x="80" y="300" width="155" height="22" rx="3" fill="#1c2128" stroke="#21262d" stroke-width="0.5"/>
+  <text x="157" y="315" text-anchor="middle" fill="#8b949e" font-size="9">service_registry.py · 6 服务</text>
+  <rect x="245" y="300" width="155" height="22" rx="3" fill="#1c2128" stroke="#21262d" stroke-width="0.5"/>
+  <text x="322" y="315" text-anchor="middle" fill="#8b949e" font-size="9">defense_layers.py · L1-L3</text>
+
+  <!-- 回调 -->
+  <rect x="60" y="335" width="360" height="50" rx="6" fill="#161b22" stroke="#e3b341" stroke-width="1.5"/>
+  <text x="240" y="353" text-anchor="middle" fill="#e3b341" font-weight="600" font-size="11">on_check_complete 回调</text>
+  <text x="240" y="370" text-anchor="middle" fill="#8b949e" font-size="9">report_status 注入 · 服务状态变更飞书通知 · LLM 诊断（可选）</text>
+
+  <!-- ============ StateStore ============ -->
+  <text x="40" y="420" class="section-title">StateStore — 4 区文件存储</text>
+  <text x="40" y="440" class="badge">agent_core/state_store.py · 线程安全 · 纯文件无外部依赖</text>
+
+  <rect x="60" y="460" width="270" height="55" rx="6" fill="#161b22" stroke="#58a6ff" stroke-width="1"/>
+  <text x="195" y="480" text-anchor="middle" fill="#58a6ff" font-size="10">working/ · latest.json</text>
+  <text x="195" y="498" text-anchor="middle" fill="#8b949e" font-size="9">当前快照 · 每检查周期覆盖</text>
+
+  <rect x="360" y="460" width="270" height="55" rx="6" fill="#161b22" stroke="#3fb950" stroke-width="1"/>
+  <text x="495" y="480" text-anchor="middle" fill="#3fb950" font-size="10">episodic/ · YYYY-MM-DD.jsonl</text>
+  <text x="495" y="498" text-anchor="middle" fill="#8b949e" font-size="9">追加事件日志 · 30 天清理</text>
+
+  <rect x="660" y="460" width="270" height="55" rx="6" fill="#161b22" stroke="#e3b341" stroke-width="1"/>
+  <text x="795" y="480" text-anchor="middle" fill="#e3b341" font-size="10">baseline/ · {metric}.json</text>
+  <text x="795" y="498" text-anchor="middle" fill="#8b949e" font-size="9">168 值滑动窗口 · 异常检测</text>
+
+  <rect x="960" y="460" width="270" height="55" rx="6" fill="#161b22" stroke="#ff7b72" stroke-width="1"/>
+  <text x="1095" y="480" text-anchor="middle" fill="#ff7b72" font-size="10">alerts/ · history.jsonl</text>
+  <text x="1095" y="498" text-anchor="middle" fill="#8b949e" font-size="9">告警日志 · cooldown 1800s</text>
+
+  <!-- 数据流 -->
+  <line x1="240" y1="315" x2="120" y2="458" class="edge-data" marker-end="url(#arrow-data)"/>
+  <text x="155" y="450" text-anchor="middle" fill="#3fb950" font-size="9">写 latest.json</text>
+  <line x1="240" y1="315" x2="480" y2="458" class="edge-data" marker-end="url(#arrow-data)"/>
+  <text x="360" y="450" text-anchor="middle" fill="#3fb950" font-size="9">事件日志</text>
+
+  <!-- ============ Baseline Engine ============ -->
+  <text x="40" y="565" class="section-title">Baseline Engine · 异常检测</text>
+  <text x="40" y="585" class="badge">加权中位数 + 加权标准差 · 自动 regime shift 检测 · 加速衰减</text>
+
+  <rect x="60" y="605" width="1170" height="40" rx="6" fill="#1c2128" stroke="#30363d" stroke-width="1"/>
+  <text x="645" y="620" text-anchor="middle" fill="#c9d1d9" font-size="10">异常检测阈值: proxy 延迟(500ms) · disk 85%(warn)/90%(critical) · CPU 80% · mem 85%</text>
+  <text x="645" y="637" text-anchor="middle" fill="#8b949e" font-size="9">连续 20 次同向偏离 → 检测到 regime shift → 加速衰减旧值 · service 连续 2 轮 stopped → 飞书通知</text>
+
+  <!-- ============ 定时任务 ============ -->
+  <text x="40" y="690" class="section-title">Scheduler — 定时任务</text>
+  <text x="40" y="710" class="badge">agent_core/scheduler.py · threading-based · 1s 轮询 · 文件持久化 data/tasks.json</text>
+
+  <rect x="60" y="730" width="380" height="75" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="250" y="752" text-anchor="middle" fill="#58a6ff" font-weight="600" font-size="12">daily_report · 每日 08:30</text>
+  <text x="250" y="770" text-anchor="middle" fill="#8b949e" font-size="10">子进程: python3 runner.py (daily_report/)</text>
+  <text x="250" y="788" text-anchor="middle" fill="#8b949e" font-size="9">参数: --send-email --section-config (周一 tool_audit / 周二 twin_health_deep / 周五 memory_deep)</text>
+
+  <!-- 箭头到 daily_report 项目 -->
+  <rect x="500" y="730" width="250" height="40" rx="6" fill="#1c2128" stroke="#21262d" stroke-width="1"/>
+  <text x="625" y="748" text-anchor="middle" fill="#c9d1d9" font-size="10">generator.py · stats_collector</text>
+  <text x="625" y="763" text-anchor="middle" fill="#8b949e" font-size="9">email_sender.py → 邮件投递</text>
+  <line x1="440" y1="755" x2="495" y2="755" class="edge" marker-end="url(#arrow)"/>
+
+  <rect x="60" y="830" width="380" height="65" rx="8" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="250" y="852" text-anchor="middle" fill="#3fb950" font-weight="600" font-size="12">semi_report · 每日 08:02</text>
+  <text x="250" y="870" text-anchor="middle" fill="#8b949e" font-size="10">子进程: npx tsx src/pipeline.ts (semi-report/)</text>
+  <text x="250" y="885" text-anchor="middle" fill="#8b949e" font-size="9">RSS采集 → LLM分类/翻译 → HTML → 163邮箱投递</text>
+
+  <rect x="500" y="830" width="250" height="40" rx="6" fill="#1c2128" stroke="#21262d" stroke-width="1"/>
+  <text x="625" y="848" text-anchor="middle" fill="#c9d1d9" font-size="10">RSS parser → pipeline.ts</text>
+  <text x="625" y="863" text-anchor="middle" fill="#8b949e" font-size="9">LLM 7分类 · nodemailer 投递</text>
+  <line x1="440" y1="855" x2="495" y2="855" class="edge" marker-end="url(#arrow)"/>
+
+  <rect x="60" y="920" width="380" height="65" rx="8" fill="#161b22" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="250" y="942" text-anchor="middle" fill="#d2a8ff" font-weight="600" font-size="12">twin_gap_push · 每日 10/14/20</text>
+  <text x="250" y="960" text-anchor="middle" fill="#8b949e" font-size="10">Inline Python: digital-clone twin.gap_detector</text>
+  <text x="250" y="975" text-anchor="middle" fill="#8b949e" font-size="9">detect_and_push_gaps(max_count=1) → 飞书卡片</text>
+
+  <!-- ============ trip_scanner ============ -->
+  <text x="40" y="1030" class="section-title">Trip 系统 (旅行助手)</text>
+
+  <rect x="60" y="1050" width="480" height="95" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="300" y="1072" text-anchor="middle" fill="#f0f6fc" font-weight="600" font-size="12">check_trip_scanner ← 每 60s 检查</text>
+  <rect x="80" y="1085" width="200" height="24" rx="3" fill="#1c2128" stroke="#21262d" stroke-width="0.5"/>
+  <text x="180" y="1101" text-anchor="middle" fill="#8b949e" font-size="9">扫描 ops-daemon/data/trips/</text>
+  <rect x="300" y="1085" width="220" height="24" rx="3" fill="#1c2128" stroke="#21262d" stroke-width="0.5"/>
+  <text x="410" y="1101" text-anchor="middle" fill="#8b949e" font-size="9">扫描 claudetalk/data/trips/</text>
+  <text x="300" y="1130" text-anchor="middle" fill="#8b949e" font-size="9">started_at 到期 → systemctl --user start trip@trip_id.service</text>
+
+  <rect x="580" y="1050" width="300" height="70" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="730" y="1072" text-anchor="middle" fill="#f0f6fc" font-weight="600" font-size="11">trip_runner.py (独立进程)</text>
+  <text x="730" y="1090" text-anchor="middle" fill="#8b949e" font-size="9">15s polling · 飞书交互式卡片</text>
+  <text x="730" y="1106" text-anchor="middle" fill="#8b949e" font-size="9">天气检查 (300s) · POI 查餐厅/停车</text>
+
+  <rect x="920" y="1050" width="150" height="50" rx="6" fill="#1c2128" stroke="#21262d" stroke-width="1"/>
+  <text x="995" y="1070" text-anchor="middle" fill="#c9d1d9" font-size="10">travel-mcp</text>
+  <text x="995" y="1088" text-anchor="middle" fill="#8b949e" font-size="9">天气 + POI 查询</text>
+  <line x1="880" y1="1080" x2="915" y2="1075" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- ============ 服务注册表 ============ -->
+  <text x="40" y="1190" class="section-title">service-registry.yaml — 被检查的 6 个服务</text>
+  <rect x="60" y="1210" width="200" height="22" rx="3" fill="#1c2128" stroke="#21262d" stroke-width="0.5"/>
+  <text x="160" y="1225" text-anchor="middle" fill="#8b949e" font-size="9">model-proxy · systemd</text>
+  <rect x="280" y="1210" width="200" height="22" rx="3" fill="#1c2128" stroke="#21262d" stroke-width="0.5"/>
+  <text x="380" y="1225" text-anchor="middle" fill="#8b949e" font-size="9">claudetalk · systemd</text>
+  <rect x="500" y="1210" width="200" height="22" rx="3" fill="#1c2128" stroke="#21262d" stroke-width="0.5"/>
+  <text x="600" y="1225" text-anchor="middle" fill="#8b949e" font-size="9">feishu-bridge · systemd</text>
+  <rect x="720" y="1210" width="200" height="22" rx="3" fill="#1c2128" stroke="#21262d" stroke-width="0.5"/>
+  <text x="820" y="1225" text-anchor="middle" fill="#8b949e" font-size="9">claudetalk-mcp · systemd</text>
+  <rect x="940" y="1210" width="200" height="22" rx="3" fill="#1c2128" stroke="#21262d" stroke-width="0.5"/>
+  <text x="1040" y="1225" text-anchor="middle" fill="#8b949e" font-size="9">ops-dashboard · systemd</text>
+  <rect x="1160" y="1210" width="200" height="22" rx="3" fill="#1c2128" stroke="#21262d" stroke-width="0.5"/>
+  <text x="1260" y="1225" text-anchor="middle" fill="#8b949e" font-size="9">remote-agent · 孤儿(端口探测)</text>
+
+  <!-- ============ 通知系统 ============ -->
+  <text x="40" y="1280" class="section-title">通知 Dispatch</text>
+  <rect x="60" y="1300" width="600" height="45" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="360" y="1320" text-anchor="middle" fill="#f0f6fc" font-weight="600" font-size="11">notify.py · tenant_access_token → 飞书交互卡片 (blue/orange/red) + 终端 fallback</text>
+  <text x="360" y="1338" text-anchor="middle" fill="#8b949e" font-size="10">FEISHU_APP_ID · FEISHU_APP_SECRET · FEISHU_RECEIVE_ID (ou_6a6b52dc...) · 触发: 启动/停止/崩溃/服务状态变更</text>
+
+  <!-- ============ MCP Server ============ -->
+  <text x="40" y="1380" class="section-title">MCP Server (独立 · 供 Claude Code 查询)</text>
+  <rect x="60" y="1400" width="600" height="40" rx="6" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="360" y="1420" text-anchor="middle" fill="#58a6ff" font-weight="600" font-size="11">ops_daemon/mcp_server.py · FastMCP</text>
+  <text x="360" y="1436" text-anchor="middle" fill="#8b949e" font-size="9">status() · recent_events() · task CRUD · phone_task CRUD · diagnose() calls llm.py (DeepSeek flash)</text>
+
+  <!-- ============ LLM 诊断 ============ -->
+  <rect x="700" y="1400" width="540" height="40" rx="6" fill="#161b22" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="970" y="1420" text-anchor="middle" fill="#d2a8ff" font-weight="600" font-size="11">llm.py · deepseek-v4-flash (直连 api.deepseek.com，不经过 proxy)</text>
+  <text x="970" y="1436" text-anchor="middle" fill="#8b949e" font-size="9">最近 20 事件 + 异常上下文 → 根因分析 · 建议操作 · 严重性评估</text>
+
+  <!-- ============ 防御层检查细节 ============ -->
+  <text x="40" y="1475" class="section-title">defense_layers.py 细节</text>
+  <rect x="60" y="1495" width="380" height="35" rx="4" fill="#1c2128" stroke="#58a6ff" stroke-width="0.5"/>
+  <text x="250" y="1512" text-anchor="middle" fill="#58a6ff" font-size="10">L1 Pact Broker · localhost:9292 · 获取最新验证结果 via HAL links</text>
+  <rect x="460" y="1495" width="380" height="35" rx="4" fill="#1c2128" stroke="#3fb950" stroke-width="0.5"/>
+  <text x="650" y="1512" text-anchor="middle" fill="#3fb950" font-size="10">L2 Jaeger · OTLP gRPC 4317 + UI 16686 · 查询 service list</text>
+  <rect x="860" y="1495" width="380" height="35" rx="4" fill="#1c2128" stroke="#e3b341" stroke-width="0.5"/>
+  <text x="1050" y="1512" text-anchor="middle" fill="#e3b341" font-size="10">L3 Git · 遍历项目目录查未提交/未推送/最后提交日期</text>
+</svg>
+</body>
+</html>

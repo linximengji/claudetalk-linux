@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>claudetalk + feishu-bridge 架构图</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0d1117;color:#c9d1d9;font-family:'Segoe UI',system-ui,sans-serif;padding:30px;display:flex;flex-direction:column;align-items:center}
+h1{font-size:20px;margin-bottom:25px;color:#f0f6fc}
+svg{max-width:1400px;background:#0d1117}
+.node rect{fill:#161b22;stroke:#30363d;stroke-width:1.5;rx:6;ry:6}
+.node .title{font-size:13px;font-weight:600;fill:#f0f6fc}
+.node .sub{font-size:11px;fill:#8b949e}
+.edge{stroke:#58a6ff;stroke-width:1.5;fill:none}
+.edge-label{font-size:10px;fill:#8b949e}
+.edge-proc{stroke:#3fb950;stroke-width:1.5;fill:none;stroke-dasharray:6,3}
+.hook{stroke:#d2a8ff;stroke-width:1.5;fill:none;stroke-dasharray:3,3}
+.hook-label{font-size:10px;fill:#d2a8ff}
+.badge{font-size:9px;fill:#8b949e}
+.section-title{font-size:14px;font-weight:600;fill:#f0f6fc}
+</style>
+</head>
+<body>
+<h1>claudetalk + feishu-bridge 架构图（含 Session Hook 全流程）</h1>
+<svg viewBox="0 0 1350 1250">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#58a6ff"/></marker>
+    <marker id="arrow-proc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#3fb950"/></marker>
+    <marker id="arrow-hook" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#d2a8ff"/></marker>
+  </defs>
+
+  <!-- ============ 标题区域 ============ -->
+  <text x="40" y="30" class="section-title">飞书消息接收</text>
+  <text x="40" y="50" class="badge">feishu-bridge 独立进程 (port 9878) · API polling 4s · WS 长连接</text>
+  <text x="40" y="65" class="badge">claudetalk 主进程 (port 9877) · bot_claudetalk.json 文件协议 · 2s polling</text>
+
+  <!-- ============ 飞书 ============ -->
+  <rect x="60" y="85" width="120" height="55" rx="10" fill="#1f6feb" opacity="0.2" stroke="#1f6feb" stroke-width="1.5"/>
+  <text x="120" y="107" text-anchor="middle" fill="#58a6ff" font-weight="600" font-size="12">飞书 / Lark</text>
+  <text x="120" y="125" text-anchor="middle" fill="#8b949e" font-size="10">WebSocket API</text>
+
+  <!-- ============ feishu-bridge ============ -->
+  <rect x="280" y="75" width="230" height="75" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="395" y="100" text-anchor="middle" fill="#f0f6fc" font-weight="600" font-size="13">feishu-bridge</text>
+  <text x="395" y="118" text-anchor="middle" fill="#8b949e" font-size="10">port 9878 · WS 长连接 + REST API</text>
+  <text x="395" y="135" text-anchor="middle" fill="#8b949e" font-size="10">pollMessages() / on_message()</text>
+
+  <!-- arrow: 飞书 → feishu-bridge -->
+  <line x1="180" y1="112" x2="275" y2="112" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- ============ bot_claudetalk.json ============ -->
+  <rect x="340" y="180" width="230" height="45" rx="6" fill="#1c2128" stroke="#21262d" stroke-width="1"/>
+  <text x="455" y="198" text-anchor="middle" fill="#c9d1d9" font-size="11" font-weight="600">bot_claudetalk.json</text>
+  <text x="455" y="214" text-anchor="middle" fill="#8b949e" font-size="10">PeerMessage 队列 · 原子写入</text>
+
+  <!-- arrow: bridge → 文件 -->
+  <line x1="395" y1="150" x2="395" y2="178" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- ============ claudetalk ============ -->
+  <rect x="300" y="260" width="280" height="80" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="440" y="285" text-anchor="middle" fill="#f0f6fc" font-weight="600" font-size="13">claudetalk 主进程</text>
+  <text x="440" y="303" text-anchor="middle" fill="#8b949e" font-size="10">port 9877 · startBot()</text>
+  <text x="440" y="320" text-anchor="middle" fill="#8b949e" font-size="10">processPeerMessages() → handleMessage()</text>
+
+  <!-- arrow: 文件 → claudetalk -->
+  <line x1="455" y1="225" x2="440" y2="255" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- ============ 消息处理链 ============ -->
+  <rect x="660" y="75" width="300" height="30" rx="4" fill="#1c2128" stroke="#30363d" stroke-width="1"/>
+  <text x="810" y="94" text-anchor="middle" fill="#f0f6fc" font-size="11">handleMessage() — 优先级调度链</text>
+  <line x1="580" y1="110" x2="660" y2="93" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- 各个 handler -->
+  <rect x="660" y="115" width="300" height="26" rx="3" fill="#161b22" stroke="#21262d" stroke-width="1"/>
+  <text x="810" y="132" text-anchor="middle" fill="#8b949e" font-size="10">1. 系统命令 /new /help → 立即回复</text>
+  <rect x="660" y="145" width="300" height="26" rx="3" fill="#161b22" stroke="#21262d" stroke-width="1"/>
+  <text x="810" y="162" text-anchor="middle" fill="#8b949e" font-size="10">2. 会话管理 /session list/resume/...</text>
+  <rect x="660" y="175" width="300" height="26" rx="3" fill="#161b22" stroke="#21262d" stroke-width="1"/>
+  <text x="810" y="192" text-anchor="middle" fill="#8b949e" font-size="10">3. 任务命令 /task /tasks</text>
+  <rect x="660" y="205" width="300" height="26" rx="3" fill="#161b22" stroke="#21262d" stroke-width="1"/>
+  <text x="810" y="222" text-anchor="middle" fill="#8b949e" font-size="10">4. Status / Log 查询</text>
+  <rect x="660" y="235" width="300" height="26" rx="3" fill="#161b22" stroke="#21262d" stroke-width="1"/>
+  <text x="810" y="252" text-anchor="middle" fill="#8b949e" font-size="10">5. Trip 路由 → trip:xxx 会话</text>
+  <rect x="660" y="265" width="300" height="26" rx="3" fill="#161b22" stroke="#21262d" stroke-width="1"/>
+  <text x="810" y="282" text-anchor="middle" fill="#8b949e" font-size="10">6. 快捷归档「加入手机待办」→ 飞书确认卡</text>
+  <rect x="660" y="295" width="300" height="26" rx="3" fill="#161b22" stroke="#21262d" stroke-width="1"/>
+  <text x="810" y="312" text-anchor="middle" fill="#8b949e" font-size="10">7. 远程终端 → 跳过（bridge 处理）</text>
+  <rect x="660" y="325" width="300" height="26" rx="3" fill="#161b22" stroke="#e3b341" stroke-width="1"/>
+  <text x="810" y="342" text-anchor="middle" fill="#e3b341" font-size="10">8. 权限引擎 → L2/L3 飞书审批卡</text>
+  <rect x="660" y="355" width="300" height="26" rx="3" fill="#161b22" stroke="#3fb950" stroke-width="1"/>
+  <text x="810" y="372" text-anchor="middle" fill="#3fb950" font-size="10">9. callClaude() / callClaudeStreaming()</text>
+  <rect x="660" y="385" width="300" height="26" rx="3" fill="#161b22" stroke="#3fb950" stroke-width="1"/>
+  <text x="810" y="402" text-anchor="middle" fill="#3fb950" font-size="10">10. enqueueSession() → 序列化队列</text>
+
+  <!-- ============ 会话管理 ============ -->
+  <text x="40" y="420" class="section-title">Session 生命周期</text>
+  <text x="40" y="440" class="badge">claude.ts · sessionQueues · .claudetalk-sessions.json</text>
+
+  <!-- Session Manager -->
+  <rect x="60" y="460" width="220" height="60" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="170" y="482" text-anchor="middle" fill="#f0f6fc" font-weight="600" font-size="11">Session Manager</text>
+  <text x="170" y="498" text-anchor="middle" fill="#8b949e" font-size="9">enqueueSession / dequeueSession</text>
+  <text x="170" y="512" text-anchor="middle" fill="#8b949e" font-size="9">序列化队列 (per-conversation)</text>
+
+  <!-- .claudetalk-sessions.json -->
+  <rect x="320" y="460" width="200" height="45" rx="6" fill="#1c2128" stroke="#21262d" stroke-width="1"/>
+  <text x="420" y="478" text-anchor="middle" fill="#c9d1d9" font-size="10">.claudetalk-sessions.json</text>
+  <text x="420" y="493" text-anchor="middle" fill="#8b949e" font-size="9">sessionId + cumulatedTokens 等</text>
+
+  <line x1="280" y1="490" x2="315" y2="485" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- Claude CLI 子进程 -->
+  <rect x="560" y="455" width="240" height="70" rx="8" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="680" y="477" text-anchor="middle" fill="#3fb950" font-weight="600" font-size="11">Claude CLI 子进程</text>
+  <text x="680" y="493" text-anchor="middle" fill="#8b949e" font-size="9">/usr/local/bin/claude</text>
+  <text x="680" y="508" text-anchor="middle" fill="#8b949e" font-size="9">-p --resume sessionId / --agents</text>
+
+  <line x1="420" y1="505" x2="555" y2="490" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- ============ 完整的 Session Hook 流程 ============ -->
+  <text x="40" y="605" class="section-title">Session Hook 全流程（按事件顺序）</text>
+  <text x="40" y="625" class="badge">所有 hook 在 ~/.claude/hooks/ · settings.json 注册</text>
+
+  <!-- Session Start -->
+  <rect x="60" y="645" width="220" height="70" rx="6" fill="#161b22" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="170" y="665" text-anchor="middle" fill="#d2a8ff" font-weight="600" font-size="11">SessionStart</text>
+  <text x="170" y="683" text-anchor="middle" fill="#8b949e" font-size="10">session_start.py</text>
+  <text x="170" y="698" text-anchor="middle" fill="#8b949e" font-size="10">注入 MEMORY.md 索引到上下文</text>
+
+  <!-- UserPromptSubmit -->
+  <rect x="320" y="645" width="220" height="70" rx="6" fill="#161b22" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="430" y="665" text-anchor="middle" fill="#d2a8ff" font-weight="600" font-size="11">UserPromptSubmit (每次用户消息)</text>
+  <text x="430" y="683" text-anchor="middle" fill="#8b949e" font-size="10">session_recall.py (8s timeout)</text>
+  <text x="430" y="698" text-anchor="middle" fill="#8b949e" font-size="10">LLM 分类 → memory_recall → 注入 3 条</text>
+
+  <!-- PreToolUse (Bash/PowerShell) -->
+  <rect x="60" y="745" width="220" height="70" rx="6" fill="#161b22" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="170" y="765" text-anchor="middle" fill="#d2a8ff" font-weight="600" font-size="11">PreToolUse (Bash/PowerShell)</text>
+  <text x="170" y="783" text-anchor="middle" fill="#8b949e" font-size="10">protect_services.py (5s)</text>
+  <text x="170" y="798" text-anchor="middle" fill="#8b949e" font-size="10">bash_length_guard.py (10s)</text>
+  <text x="170" y="813" text-anchor="middle" fill="#8b949e" font-size="10">pre_tool_guard.py (10s)</text>
+
+  <!-- PreToolUse (Edit/Write) -->
+  <rect x="320" y="745" width="220" height="60" rx="6" fill="#161b22" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="430" y="765" text-anchor="middle" fill="#d2a8ff" font-weight="600" font-size="11">PreToolUse (Edit/Write/Patch)</text>
+  <text x="430" y="783" text-anchor="middle" fill="#8b949e" font-size="10">contract_guard.py (25s)</text>
+  <text x="430" y="798" text-anchor="middle" fill="#8b949e" font-size="10">Pact 合约验证</text>
+
+  <!-- PermissionRequest -->
+  <rect x="580" y="745" width="200" height="60" rx="6" fill="#161b22" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="680" y="765" text-anchor="middle" fill="#d2a8ff" font-weight="600" font-size="11">PermissionRequest</text>
+  <text x="680" y="783" text-anchor="middle" fill="#8b949e" font-size="10">bash_metachar_filter.py (10s)</text>
+  <text x="680" y="798" text-anchor="middle" fill="#8b949e" font-size="10">自动放行安全元字符</text>
+
+  <!-- PostToolUse -->
+  <rect x="60" y="850" width="220" height="55" rx="6" fill="#161b22" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="170" y="870" text-anchor="middle" fill="#d2a8ff" font-weight="600" font-size="11">PostToolUse (Edit/Write/Bash/...)</text>
+  <text x="170" y="888" text-anchor="middle" fill="#8b949e" font-size="10">audit_logger.py (5s)</text>
+
+  <!-- PostToolUseFailure -->
+  <rect x="320" y="850" width="220" height="55" rx="6" fill="#161b22" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="430" y="870" text-anchor="middle" fill="#d2a8ff" font-weight="600" font-size="11">PostToolUseFailure (所有工具)</text>
+  <text x="430" y="888" text-anchor="middle" fill="#8b949e" font-size="10">post_failure_recorder.py (10s) → failure_memory.json</text>
+
+  <!-- PreCompact -->
+  <rect x="580" y="850" width="220" height="55" rx="6" fill="#161b22" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="690" y="870" text-anchor="middle" fill="#d2a8ff" font-weight="600" font-size="11">PreCompact</text>
+  <text x="690" y="888" text-anchor="middle" fill="#8b949e" font-size="10">session_knowledge.py (10s)</text>
+
+  <!-- SessionEnd -->
+  <rect x="60" y="940" width="400" height="75" rx="8" fill="#161b22" stroke="#ff7b72" stroke-width="1.5"/>
+  <text x="260" y="960" text-anchor="middle" fill="#ff7b72" font-weight="600" font-size="13">SessionEnd（会话语境结束时）</text>
+  <text x="260" y="978" text-anchor="middle" fill="#8b949e" font-size="10">session_knowledge.py (30s) → 解析 transcript → 打分 → staging JSON</text>
+  <text x="260" y="993" text-anchor="middle" fill="#8b949e" font-size="10">git_sync.py (300s) → 10 仓库 commit + push</text>
+
+  <!-- 连接线: hooks 之间时序 -->
+  <line x1="280" y1="680" x2="315" y2="680" class="hook" marker-end="url(#arrow-hook)"/>
+  <text x="298" y="673" text-anchor="middle" fill="#d2a8ff" font-size="9">→</text>
+  <line x1="540" y1="680" x2="540" y2="745" class="hook" marker-end="url(#arrow-hook)"/>
+  <text x="545" y="715" text-anchor="middle" fill="#d2a8ff" font-size="9">每次工具调用</text>
+  <line x1="280" y1="780" x2="315" y2="780" class="hook" marker-end="url(#arrow-hook)"/>
+  <line x1="540" y1="775" x2="575" y2="775" class="hook" marker-end="url(#arrow-hook)"/>
+  <line x1="170" y1="815" x2="170" y2="845" class="hook" marker-end="url(#arrow-hook)"/>
+  <line x1="430" y1="805" x2="430" y2="845" class="hook" marker-end="url(#arrow-hook)"/>
+  <line x1="690" y1="805" x2="690" y2="845" class="hook" marker-end="url(#arrow-hook)"/>
+
+  <!-- ============ 后处理（post-response） ============ -->
+  <text x="40" y="1060" class="section-title">回复后处理</text>
+
+  <rect x="60" y="1080" width="220" height="55" rx="6" fill="#1c2128" stroke="#21262d" stroke-width="1"/>
+  <text x="170" y="1100" text-anchor="middle" fill="#c9d1d9" font-size="10">archiveConversation()</text>
+  <text x="170" y="1116" text-anchor="middle" fill="#8b949e" font-size="9">分类 → 飞书确认卡</text>
+
+  <rect x="320" y="1080" width="220" height="55" rx="6" fill="#1c2128" stroke="#21262d" stroke-width="1"/>
+  <text x="430" y="1100" text-anchor="middle" fill="#c9d1d9" font-size="10">&gt;200k tok → 异步 /compact</text>
+  <text x="430" y="1116" text-anchor="middle" fill="#8b949e" font-size="9">compact 触发 PreCompact hook</text>
+
+  <rect x="580" y="1080" width="200" height="55" rx="6" fill="#1c2128" stroke="#21262d" stroke-width="1"/>
+  <text x="680" y="1100" text-anchor="middle" fill="#c9d1d9" font-size="10">ACK → POST /ack</text>
+  <text x="680" y="1116" text-anchor="middle" fill="#8b949e" font-size="9">通知 bridge 已处理</text>
+
+  <rect x="820" y="1080" width="200" height="55" rx="6" fill="#1c2128" stroke="#21262d" stroke-width="1"/>
+  <text x="920" y="1100" text-anchor="middle" fill="#c9d1d9" font-size="10">token_usage.jsonl</text>
+  <text x="920" y="1116" text-anchor="middle" fill="#8b949e" font-size="9">记录 token 用量</text>
+
+  <!-- ============ 知识策展子进程 ============ -->
+  <text x="40" y="1175" class="section-title">知识策展（异步子进程，在 SessionEnd 触发）</text>
+
+  <rect x="60" y="1190" width="1100" height="50" rx="6" fill="#1c2128" stroke="#e3b341" stroke-width="1"/>
+  <text x="610" y="1210" text-anchor="middle" fill="#e3b341" font-size="11">条件：≥3 个 staging 文件 或 最旧 &gt; 1h → 启动 --curate 子进程</text>
+  <text x="610" y="1228" text-anchor="middle" fill="#8b949e" font-size="10">获取锁 → 对每个 staging 打分 → LLM (deepseek-v4-pro) 分类 ACCEPT/REJECT → 写入 memory-mcp → 更新 persona → 投喂数字分身 → 写 task → 发飞书汇总卡</text>
+</svg>
+</body>
+</html>

@@ -626,6 +626,52 @@ async function pollMessages(api: FeishuApiClient, claudeTalkDir: string, chatIds
         continue
       }
 
+      // Gap card reply detection: any reply (no /twin prefix needed) to a gap card
+      // is auto-ingested as twin feed. Runs before /twin and @bot checks.
+      if (!messageText.trim().startsWith('/twin')) {
+        const rootId = item.root_id as string | undefined
+        if (rootId) {
+          const gapStatePath = path.join(os.homedir(), '.claude', 'twin_gap_state.json')
+          try {
+            if (fs.existsSync(gapStatePath)) {
+              const gs = JSON.parse(fs.readFileSync(gapStatePath, 'utf-8'))
+              const gaps = gs.gaps || []
+              const match = gaps.find((g: any) => g.message_id === rootId && !g.answered)
+              if (match) {
+                const feedText = messageText.trim()
+                if (feedText) {
+                  const twinPath = '/home/ubuntu/projects/digital-clone'
+                  const tmpFile = `/tmp/twin_feed_${Date.now()}.txt`
+                  try {
+                    fs.writeFileSync(tmpFile, feedText, 'utf-8')
+                    const r = spawnSync('python3', [
+                      '-c', [
+                        `import sys; sys.path.insert(0, '${twinPath}')`,
+                        `from twin.ingestion import ingest_text`,
+                        `with open('${tmpFile}', 'r', encoding='utf-8') as f:`,
+                        `  content = f.read()`,
+                        `print(ingest_text('feishu_twin', content))`,
+                      ].join('\n')
+                    ], { timeout: 60_000, encoding: 'utf-8', stdio: 'pipe' })
+                    if (r.status === 0) {
+                      match.answered = true
+                      match.answered_at = new Date().toISOString()
+                      fs.writeFileSync(gapStatePath, JSON.stringify(gs, null, 2) + '\n', 'utf-8')
+                      const receiptType = chatId.startsWith('oc_') ? 'chat_id' : 'open_id'
+                      api.sendText(chatId, '✅ 已记录 🎯缺口已回答', receiptType).catch(() => {})
+                      console.error(`[feishu-bridge] gap auto-ingested: root_id=${rootId} text=${feedText.substring(0, 60)}`)
+                    }
+                  } catch { /* gap ingestion failed, fall through */ }
+                  finally { try { fs.unlinkSync(tmpFile) } catch {} }
+                  seen.add(msgId)
+                  continue
+                }
+              }
+            }
+          } catch { /* gap check failed, fall through */ }
+        }
+      }
+
       // /twin command: route directly to digital twin ingestion, bypass CC
       // MUST check BEFORE @bot filter — /twin in group chat doesn't need @mention
       if (messageText.trim().startsWith('/twin')) {

@@ -488,98 +488,8 @@ export async function startBot(options) {
         // 去掉飞书群聊中的 @机器人 前缀（如 "@_user_1 /new" → "/new"）
         const strippedMessage = message.replace(/^@\S+\s*/, '').trim();
         const command = strippedMessage.toLowerCase();
-        // ── Trip 会话分流 ──
-        const activeTrip = activeTrips.get(context.conversationId);
-        // "结束行程" → 清理 trip 会话
-        if (activeTrip && isTripEndIntent(command)) {
-            activeTrips.delete(context.conversationId);
-            clearSession(`trip:${activeTrip.tripId}`, workDir, profile, channelType);
-            await channel.sendMessage(context.conversationId, '行程已结束，旅游助手已退出。有需要随时叫我。', context.isGroup);
-            return;
-        }
-        // 有活跃 trip 且不是结束指令 → 路由到 trip 专属会话
-        if (activeTrip && !isTripIntent(command)) {
-            try {
-                const replyText = await callClaude({
-                    message,
-                    conversationId: `trip:${activeTrip.tripId}`,
-                    workDir,
-                    isGroup: context.isGroup,
-                    userId: context.userId,
-                    profile: 'trip',
-                    channel: channelType,
-                });
-                logger(`[trip] Claude trip reply (first 200 chars): "${replyText.substring(0, 200)}"`);
-                // 检查 Claude 回复里是否包含结束标记
-                if (replyText.includes('行程结束') || replyText.includes('旅游结束')) {
-                    activeTrips.delete(context.conversationId);
-                    logger(`[trip] Trip ended by agent: ${activeTrip.tripId}`);
-                }
-                await channel.sendMessage(context.conversationId, replyText, context.isGroup);
-            }
-            catch (err) {
-                logger(`[trip] Trip session error: ${err.message}`);
-                await channel.sendMessage(context.conversationId, '抱歉，旅游助手暂时无法响应。请稍后重试。', context.isGroup);
-            }
-            return;
-        }
-        // Trip 意图 → 新建独立会话
-        if (isTripIntent(command) && !activeTrip && !command.startsWith('/')) {
-            const tripId = `trip-${Date.now().toString(36)}`;
-            activeTrips.set(context.conversationId, { tripId, sessionId: '' });
-            logger(`[trip] New trip created: conversationId=${context.conversationId}, tripId=${tripId}`);
-            // 新 trip 会话：用 profile=trip 进入旅游助手模式
-            try {
-                const useStreaming = !!(channel.editMessage && channel.sendMessageWithId);
-                if (useStreaming) {
-                    let statusMsgId = await channel.sendMessageWithId(context.conversationId, '⏳ 正在启动旅游助手...', context.isGroup);
-                    const { result: finalResult } = await callClaudeStreaming({
-                        message,
-                        conversationId: `trip:${tripId}`,
-                        workDir,
-                        isGroup: context.isGroup,
-                        userId: context.userId,
-                        profile: 'trip',
-                        channel: channelType,
-                    }, async (event) => {
-                        if (event.type === 'text' && event.text) {
-                            try {
-                                await channel.editMessage(context.conversationId, statusMsgId, event.text);
-                            }
-                            catch { }
-                        }
-                    });
-                    if (finalResult.includes('行程结束') || finalResult.includes('旅游结束')) {
-                        activeTrips.delete(context.conversationId);
-                    }
-                    _lastConvPair.set(context.conversationId, { message, reply: finalResult });
-                }
-                else {
-                    const replyText = await callClaude({
-                        message,
-                        conversationId: `trip:${tripId}`,
-                        workDir,
-                        isGroup: context.isGroup,
-                        userId: context.userId,
-                        profile: 'trip',
-                        channel: channelType,
-                    });
-                    logger(`[trip] Claude trip reply (first 200 chars): "${replyText.substring(0, 200)}"`);
-                    if (replyText.includes('行程结束') || replyText.includes('旅游结束')) {
-                        activeTrips.delete(context.conversationId);
-                    }
-                    await channel.sendMessage(context.conversationId, replyText, context.isGroup);
-                    _lastConvPair.set(context.conversationId, { message, reply: replyText });
-                }
-            }
-            catch (err) {
-                logger(`[trip] Trip session init error: ${err.message}`);
-                activeTrips.delete(context.conversationId);
-                await channel.sendMessage(context.conversationId, '抱歉，启动旅游助手失败。请稍后重试。', context.isGroup);
-            }
-            return;
-        }
-        // 内置指令：清空会话（使用原始消息判断，不受 processedMessage 影响）
+        // ═══ 第0优先：系统内置指令（优先级最高，不受 trip 状态影响） ═══
+        // 内置指令：清空会话
         if (RESET_COMMANDS.has(command)) {
             const hadSession = clearSession(context.conversationId, workDir, profile, channelType);
             const replyText = hadSession
@@ -588,7 +498,7 @@ export async function startBot(options) {
             await channel.sendMessage(context.conversationId, replyText, context.isGroup);
             return;
         }
-        // 内置指令：帮助（使用原始消息判断，不受 contextMessage 影响）
+        // 内置指令：帮助
         if (HELP_COMMANDS.has(command)) {
             if (typeof channel.sendMarkdownCard === 'function') {
                 await channel.sendMarkdownCard(context.conversationId, HELP_TEXT, context.isGroup);
@@ -696,6 +606,95 @@ export async function startBot(options) {
             }
             else {
                 await channel.sendMessage(context.conversationId, bodyParts.join('\n'), context.isGroup);
+            }
+            return;
+        }
+        // ═══ Trip 会话分流（路由到 trip 专属会话） ═══
+        const activeTrip = activeTrips.get(context.conversationId);
+        // Trip 结束指令
+        if (activeTrip && isTripEndIntent(command)) {
+            activeTrips.delete(context.conversationId);
+            clearSession(`trip:${activeTrip.tripId}`, workDir, profile, channelType);
+            await channel.sendMessage(context.conversationId, '行程已结束，旅游助手已退出。有需要随时叫我。', context.isGroup);
+            return;
+        }
+        // Trip 活跃态分流
+        if (activeTrip && !isTripIntent(command)) {
+            try {
+                const replyText = await callClaude({
+                    message,
+                    conversationId: `trip:${activeTrip.tripId}`,
+                    workDir,
+                    isGroup: context.isGroup,
+                    userId: context.userId,
+                    profile: 'trip',
+                    channel: channelType,
+                });
+                logger(`[trip] Claude trip reply (first 200 chars): "${replyText.substring(0, 200)}"`);
+                if (replyText.includes('行程结束') || replyText.includes('旅游结束')) {
+                    activeTrips.delete(context.conversationId);
+                    logger(`[trip] Trip ended by agent: ${activeTrip.tripId}`);
+                }
+                await channel.sendMessage(context.conversationId, replyText, context.isGroup);
+            }
+            catch (err) {
+                logger(`[trip] Trip session error: ${err.message}`);
+                await channel.sendMessage(context.conversationId, '抱歉，旅游助手暂时无法响应。请稍后重试。', context.isGroup);
+            }
+            return;
+        }
+        // Trip 新建意图
+        if (isTripIntent(command) && !activeTrip && !command.startsWith('/')) {
+            const tripId = `trip-${Date.now().toString(36)}`;
+            activeTrips.set(context.conversationId, { tripId, sessionId: '' });
+            logger(`[trip] New trip created: conversationId=${context.conversationId}, tripId=${tripId}`);
+            try {
+                const useStreaming = !!(channel.editMessage && channel.sendMessageWithId);
+                if (useStreaming) {
+                    let statusMsgId = await channel.sendMessageWithId(context.conversationId, '⏳ 正在启动旅游助手...', context.isGroup);
+                    const { result: finalResult } = await callClaudeStreaming({
+                        message,
+                        conversationId: `trip:${tripId}`,
+                        workDir,
+                        isGroup: context.isGroup,
+                        userId: context.userId,
+                        profile: 'trip',
+                        channel: channelType,
+                    }, async (event) => {
+                        if (event.type === 'text' && event.text) {
+                            try {
+                                await channel.editMessage(context.conversationId, statusMsgId, event.text);
+                            }
+                            catch { }
+                        }
+                    });
+                    if (finalResult.includes('行程结束') || finalResult.includes('旅游结束')) {
+                        activeTrips.delete(context.conversationId);
+                    }
+                    _lastConvPair.set(context.conversationId, { message, reply: finalResult });
+                }
+                else {
+                    const replyText = await callClaude({
+                        message,
+                        conversationId: `trip:${tripId}`,
+                        workDir,
+                        isGroup: context.isGroup,
+                        userId: context.userId,
+                        profile: 'trip',
+                        channel: channelType,
+                    });
+                    logger(`[trip] Claude trip reply (first 200 chars): "${replyText.substring(0, 200)}"`);
+                    if (replyText.includes('行程结束') || replyText.includes('旅游结束')) {
+                        activeTrips.delete(context.conversationId);
+                    }
+                    await channel.sendMessage(context.conversationId, replyText, context.isGroup);
+                    _lastConvPair.set(context.conversationId, { message, reply: replyText });
+                }
+            }
+            catch (err) {
+                logger(`[trip] Trip session init error: ${err.message}`);
+                activeTrips.delete(context.conversationId);
+                await channel.sendMessage(context.conversationId, '抱歉，启动旅游助手失败。请稍后重试。', context.isGroup);
             }
             return;
         }
@@ -1055,9 +1054,10 @@ export async function startBot(options) {
                     });
                 }
                 // 确保最终消息是完整回复
-                if (lastEditText !== lastText && lastText) {
+                const textToShow = lastText || finalResult;
+                if (lastEditText !== textToShow && textToShow) {
                     try {
-                        await channel.editMessage(context.conversationId, statusMsgId, lastText);
+                        await channel.editMessage(context.conversationId, statusMsgId, textToShow);
                     }
                     catch { /* ignore */ }
                 }

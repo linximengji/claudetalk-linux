@@ -1091,9 +1091,17 @@ async function _execClaudeStreaming(
     let finalSessionId = existingSessionId || ''
     let buffer = ''
 
-    child.stderr.on('data', (data: Buffer) => { stderr += data.toString() })
-
-    child.stdout.on('data', (data: Buffer) => {
+    child.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString()
+      // Claude CLI writes parse errors to stderr when the proxy returns
+      // malformed streaming chunks. Kill early instead of waiting for idle
+      // timeout, then fall back to non-streaming mode on retry.
+      if (stderr.includes('Could not parse message')) {
+        logger(`[claude-stream] JSON parse error detected in stderr, killing early for fallback`)
+        try { child.kill('SIGTERM') } catch { /* ignore */ }
+      }
+    })
+    child.stdout.on("data", (data: Buffer) => {
       _resetIdleTimer()
       buffer += data.toString()
       const lines = buffer.split('\n')
@@ -1249,6 +1257,18 @@ async function _execClaudeStreaming(
         if (retryCount < MAX_RETRY_COUNT) {
           const logSig = stderr ? stderr.slice(0, 80) : 'no output (streaming)'
           logger(`[claude-stream] Exit code ${code}, retrying (attempt ${retryCount + 1}/${MAX_RETRY_COUNT}) signal=${logSig}`)
+
+          // JSON parse error from stderr means the API returned malformed chunks.
+          // Streaming retry will hit the same problem; fall back to non-streaming.
+          const isParseError = stderr.includes('Could not parse message') || stderr.includes('parse')
+          if (isParseError) {
+            logger(`[claude-stream] JSON parse error, switching to non-streaming for retry`)
+            _execClaude(options, retryCount + 1)
+              .then(r => resolve({ result: r, sessionId: '' }))
+              .catch(reject)
+            return
+          }
+
           _execClaudeStreaming(options, onEvent, retryCount + 1)
             .then(resolve)
             .catch(reject)
@@ -1257,6 +1277,19 @@ async function _execClaudeStreaming(
 
         const exitCodeHex = code != null ? `0x${code.toString(16).toUpperCase()}` : ''
         logger(`[claude-stream] Exit code ${code} (${exitCodeHex}), stderr=${stderr ? stderr.slice(0, 200) : '(empty)'}`)
+
+        // If retries exhausted and stderr suggests a parse/json error from the API,
+        // fall back to a non-streaming call. Non-streaming mode has no idle timeout
+        // and handles the full response at once, which avoids the parse-error loop.
+        const isParseError = stderr.includes('Could not parse message') || stderr.includes('parse')
+        if (isParseError) {
+          logger(`[claude-stream] JSON parse error detected, falling back to non-streaming mode`)
+          _execClaude(options, retryCount + 1)
+            .then(r => resolve({ result: r, sessionId: '' }))
+            .catch(reject)
+          return
+        }
+
         reject(new Error(`claude exited with code ${code}. stderr: ${stderr || '(empty)'}`))
         return
       }
