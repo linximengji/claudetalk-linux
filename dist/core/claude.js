@@ -80,16 +80,18 @@ export function getSessionMap(workDir) {
 }
 /**
  * 生成 session key
- * 格式：conversationId\x00workDir\x00profile\x00channel
- * 使用 \x00（NUL 字符）作为分隔符，避免路径或 ID 中含有 | 导致解析错误
- * 不同 profile、不同 channel 的 session 完全隔离
+ * 格式：conversationId\x00workDir\x00profile\x00channel[\x00userId（私聊）]
+ * 使用 \x00（NUL 字符）作为分隔符。
+ * userId 仅用于私聊隔离，群聊中同一群的所有人共享一个 session（共享旅行计划信息）。
  */
-export function getSessionKey(conversationId, workDir, profile, channel) {
+export function getSessionKey(conversationId, workDir, profile, channel, userId, isGroup) {
     const parts = [conversationId, workDir];
     if (profile)
         parts.push(profile);
     if (channel)
         parts.push(channel);
+    if (userId && !isGroup)
+        parts.push(userId);
     return parts.join('\x00');
 }
 // 记录哪些 session 在 claude 进程运行期间被用户显式清除了
@@ -98,9 +100,9 @@ const clearedDuringProcessing = new Set();
 /**
  * 清除指定会话的 session
  */
-export function clearSession(conversationId, workDir, profile, channel) {
+export function clearSession(conversationId, workDir, profile, channel, userId, isGroup) {
     const sessionMap = getSessionMap(workDir);
-    const sessionKey = getSessionKey(conversationId, workDir, profile, channel);
+    const sessionKey = getSessionKey(conversationId, workDir, profile, channel, userId, isGroup);
     const hadSession = sessionMap.has(sessionKey);
     if (hadSession) {
         sessionMap.delete(sessionKey);
@@ -181,17 +183,19 @@ function loadConfigFromFile(filePath, profile) {
             ...profileOverride,
             profiles: undefined,
         };
-        // Override feishu credentials from global .env (takes precedence over file)
-        const envPath = join(process.env.HOME || '~', '.claude', '.env');
-        if (existsSync(envPath)) {
-            const envContent = readFileSync(envPath, 'utf-8');
-            const feishuAppId = envContent.match(/^FEISHU_APP_ID=(.+)$/m)?.[1]?.trim();
-            const feishuAppSecret = envContent.match(/^FEISHU_APP_SECRET=(.+)$/m)?.[1]?.trim();
-            if (feishuAppId && feishuAppSecret) {
-                config.feishu = {
-                    FEISHU_APP_ID: feishuAppId.replace(/^['"]|['"]$/g, ''),
-                    FEISHU_APP_SECRET: feishuAppSecret.replace(/^['"]|['"]$/g, ''),
-                };
+        // Fallback to global .env credentials only when the profile doesn't have its own
+        if (!config.feishu) {
+            const envPath = join(process.env.HOME || '~', '.claude', '.env');
+            if (existsSync(envPath)) {
+                const envContent = readFileSync(envPath, 'utf-8');
+                const feishuAppId = envContent.match(/^FEISHU_APP_ID=(.+)$/m)?.[1]?.trim();
+                const feishuAppSecret = envContent.match(/^FEISHU_APP_SECRET=(.+)$/m)?.[1]?.trim();
+                if (feishuAppId && feishuAppSecret) {
+                    config.feishu = {
+                        FEISHU_APP_ID: feishuAppId.replace(/^['"]|['"]$/g, ''),
+                        FEISHU_APP_SECRET: feishuAppSecret.replace(/^['"]|['"]$/g, ''),
+                    };
+                }
             }
         }
         return config;
@@ -285,6 +289,19 @@ function buildAgentJson(profileName, config, workDir) {
             ...(config.subagentPermissions?.allow?.length ? { tools: config.subagentPermissions.allow } : {}),
             ...(config.subagentPermissions?.deny?.length ? { disallowedTools: config.subagentPermissions.deny } : {}),
         };
+    // 注入 profile 专属 MCP server 列表（子 Agent 继承父进程 MCP 配置）
+    const mcpConfigPath = join(workDir, '.claudetalk', `${profileName}-mcp.json`);
+    try {
+        if (existsSync(mcpConfigPath)) {
+            const mcpConfig = JSON.parse(readFileSync(mcpConfigPath, 'utf-8'));
+            const servers = Object.keys(mcpConfig.mcpServers || {});
+            if (servers.length > 0) {
+                agentDef.mcpServers = servers;
+                agentDef.mcpConfig = mcpConfigPath;
+            }
+        }
+    }
+    catch { /* mcpServers 注入失败不影响主功能 */ }
     try {
         return JSON.stringify({ [profileName]: agentDef });
     }
@@ -342,6 +359,10 @@ async function compactSession(sessionKey, sessionId, workDir, profile, baseArgs)
             stdio: ['pipe', 'pipe', 'pipe'],
             cwd: workDir,
             shell: false,
+            env: {
+                ...process.env,
+                ...(profile ? { CLAUDE_PROFILE: profile } : {}),
+            },
         });
         activeSubprocesses.add(child);
         let stdout = '';
@@ -400,6 +421,10 @@ async function syncCompactSession(sessionKey, sessionId, workDir, profile) {
             stdio: ['pipe', 'pipe', 'pipe'],
             cwd: workDir,
             shell: false,
+            env: {
+                ...process.env,
+                ...(profile ? { CLAUDE_PROFILE: profile } : {}),
+            },
         });
         activeSubprocesses.add(child);
         let stdout = '';
@@ -444,6 +469,10 @@ async function summarizeAndReset(sessionKey, sessionId, workDir, profile) {
             stdio: ['pipe', 'pipe', 'pipe'],
             cwd: workDir,
             shell: false,
+            env: {
+                ...process.env,
+                ...(profile ? { CLAUDE_PROFILE: profile } : {}),
+            },
         });
         activeSubprocesses.add(child);
         let stdout = '';
@@ -503,16 +532,23 @@ async function preProcessSessionCheck(sessionMap, sessionKey, existingEntry, wor
     }
 }
 function buildClaudeArgs(options) {
-    const { message, conversationId, workDir, profile, channel, processedMessage, } = options;
+    const { message, conversationId, workDir, isGroup, profile, channel, processedMessage, userId, } = options;
     const logger = createLogger(profile);
     const sessionMap = getSessionMap(workDir);
-    const sessionKey = getSessionKey(conversationId, workDir, profile, channel);
+    const sessionKey = getSessionKey(conversationId, workDir, profile, channel, userId, isGroup);
     const existingEntry = sessionMap.get(sessionKey);
     const existingSessionId = existingEntry?.sessionId;
     const currentConfig = loadConfig(workDir, profile);
     const currentSubagentEnabled = currentConfig?.subagentEnabled ?? false;
     const currentSystemPrompt = currentConfig?.systemPrompt;
     const args = ['-p', '--output-format', 'json', '--dangerously-skip-permissions'];
+    // MCP config isolation: each profile uses its own MCP config file
+    if (profile) {
+        const mcpConfigPath = join(workDir, '.claudetalk', `${profile}-mcp.json`);
+        if (existsSync(mcpConfigPath)) {
+            args.push('--mcp-config', mcpConfigPath, '--strict-mcp-config');
+        }
+    }
     if (existingSessionId && existingEntry) {
         if (profile && currentSubagentEnabled && currentConfig) {
             const agentJson = buildAgentJson(profile, currentConfig, workDir);
@@ -548,7 +584,7 @@ function buildClaudeArgs(options) {
     return { args, actualMessage, sessionKey, sessionMap, existingSessionId, currentSubagentEnabled, currentConfig };
 }
 export async function callClaude(options, retryCount = 0) {
-    const sessionKey = getSessionKey(options.conversationId, options.workDir, options.profile, options.channel ?? 'dingtalk');
+    const sessionKey = getSessionKey(options.conversationId, options.workDir, options.profile, options.channel ?? 'dingtalk', options.userId, options.isGroup);
     return enqueueSession(sessionKey, () => _execClaude(options, retryCount));
 }
 /**
@@ -603,6 +639,10 @@ async function _execClaude(options, retryCount = 0) {
             stdio: ['pipe', 'pipe', 'pipe'],
             cwd: workDir,
             shell: false,
+            env: {
+                ...process.env,
+                ...(profile ? { CLAUDE_PROFILE: profile } : {}),
+            },
         });
         activeSubprocesses.add(child);
         // Timeout protection: if claude CLI hangs, kill and retry
@@ -772,7 +812,7 @@ async function _execClaude(options, retryCount = 0) {
     });
 }
 export async function callClaudeStreaming(options, onEvent, retryCount = 0) {
-    const sessionKey = getSessionKey(options.conversationId, options.workDir, options.profile, options.channel ?? 'dingtalk');
+    const sessionKey = getSessionKey(options.conversationId, options.workDir, options.profile, options.channel ?? 'dingtalk', options.userId, options.isGroup);
     return enqueueSession(sessionKey, () => _execClaudeStreaming(options, onEvent, retryCount));
 }
 /**
@@ -837,6 +877,10 @@ async function _execClaudeStreaming(options, onEvent, retryCount = 0) {
             stdio: ['pipe', 'pipe', 'pipe'],
             cwd: workDir,
             shell: false,
+            env: {
+                ...process.env,
+                ...(profile ? { CLAUDE_PROFILE: profile } : {}),
+            },
         });
         activeSubprocesses.add(child);
         // Idle timeout: reset on every stdout data, only fires when nothing comes through

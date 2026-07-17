@@ -31,15 +31,15 @@ export declare function saveSessionMap(workDir: string, sessionMap: Map<string, 
 export declare function getSessionMap(workDir: string): Map<string, SessionEntry>;
 /**
  * 生成 session key
- * 格式：conversationId\x00workDir\x00profile\x00channel
- * 使用 \x00（NUL 字符）作为分隔符，避免路径或 ID 中含有 | 导致解析错误
- * 不同 profile、不同 channel 的 session 完全隔离
+ * 格式：conversationId\x00workDir\x00profile\x00channel[\x00userId（私聊）]
+ * 使用 \x00（NUL 字符）作为分隔符。
+ * userId 仅用于私聊隔离，群聊中同一群的所有人共享一个 session（共享旅行计划信息）。
  */
-export declare function getSessionKey(conversationId: string, workDir: string, profile?: string, channel?: ChannelType): string;
+export declare function getSessionKey(conversationId: string, workDir: string, profile?: string, channel?: ChannelType, userId?: string, isGroup?: boolean): string;
 /**
  * 清除指定会话的 session
  */
-export declare function clearSession(conversationId: string, workDir: string, profile?: string, channel?: ChannelType): boolean;
+export declare function clearSession(conversationId: string, workDir: string, profile?: string, channel?: ChannelType, userId?: string, isGroup?: boolean): boolean;
 /**
  * 找当前 workDir、channel、profile 下最近活跃的私聊会话，用于发上线通知
  * @param workDir - 工作目录

@@ -35,6 +35,9 @@ export declare class FeishuClient implements Channel {
     /** bridge ACK 端点（仅 feishu 通道使用） */
     private readonly bridgeUrl;
     private readonly bridgeAckUrl;
+    /** 直连模式 WS 实例（trip bot 等独立 bot 使用） */
+    private _directChannel;
+    private _directPollTimer;
     constructor(config: FeishuChannelConfig);
     /**
      * 启动 peer-messages 轮询
@@ -79,6 +82,11 @@ export declare class FeishuClient implements Channel {
      * claudetalk only polls peer-message files.
      */
     start(): Promise<void>;
+    /**
+     * 直连模式：创建自己的 WebSocket 连接，不依赖 feishu-bridge
+     * trip bot 等独立 bot 使用自己的 appId/appSecret 建立 WS 长连接
+     */
+    private startDirectWS;
     /**
      * 处理卡片 action callback (card.action.trigger)
      * 必须在 3 秒内返回响应。异步操作起子进程做，不阻塞。

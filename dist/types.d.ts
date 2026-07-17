@@ -317,6 +317,8 @@ export interface FeishuChannelConfig {
     systemPrompt?: string;
     /** 工作目录（由 startBot 注入，用于存储 chat-members.json） */
     workDir?: string;
+    /** 直连模式：创建自己的 WebSocket 连接，不依赖 feishu-bridge（用于 trip bot 等独立 bot） */
+    directWS?: boolean;
 }
 /**
  * Bot 间协作消息（peer-message）

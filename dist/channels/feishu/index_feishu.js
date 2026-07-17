@@ -5,6 +5,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { registerChannel } from '../registry.js';
 import { buildOnlineNotification } from '../../utils/index.js';
@@ -13,7 +14,7 @@ import { getPhoneTasksDir } from '../../core/paths.js';
 import { callClaude } from '../../core/claude.js';
 import { archiveConversation, writeTaskToIndex } from '../../core/phone-archive.js';
 import { handleApprovalCallback } from './approval-handler.js';
-import { loadPeerMessages, removePeerMessages, } from './peer-message.js';
+import { loadPeerMessages, removePeerMessages, appendPeerMessage, } from './peer-message.js';
 import { ChatMemberStore, ChatMemberResolver, } from './chat-members.js';
 import { FEISHU_API_BASE } from '../../feishu-shared/index.js';
 const __filename = fileURLToPath(import.meta.url);
@@ -43,6 +44,9 @@ export class FeishuClient {
     /** bridge ACK 端点（仅 feishu 通道使用） */
     bridgeUrl;
     bridgeAckUrl;
+    /** 直连模式 WS 实例（trip bot 等独立 bot 使用） */
+    _directChannel = null;
+    _directPollTimer = null;
     constructor(config) {
         const bridgePort = process.env.FEISHU_BRIDGE_PORT || '9878';
         this.bridgeUrl = `http://127.0.0.1:${bridgePort}`;
@@ -78,8 +82,10 @@ export class FeishuClient {
                 botNamesToCheck.add(botName);
             if (profileName)
                 botNamesToCheck.add(profileName);
-            // feishu-bridge 固定写 bot_claudetalk.json
-            botNamesToCheck.add('claudetalk');
+            // feishu-bridge 固定写 bot_claudetalk.json，但直连模式（trip bot）不应读取
+            if (!this.config.directWS) {
+                botNamesToCheck.add('claudetalk');
+            }
             for (const nameToCheck of botNamesToCheck) {
                 this.processPeerMessages(nameToCheck).catch((error) => {
                     this.logger(`Error processing peer messages for bot_${nameToCheck}.json: ${error}`);
@@ -332,6 +338,11 @@ export class FeishuClient {
                 '  export FEISHU_APP_ID=your_app_id\n' +
                 '  export FEISHU_APP_SECRET=your_app_secret');
         }
+        if (this.config.directWS) {
+            this.logger('[feishu] Direct WS mode — creating own WebSocket connection');
+            await this.startDirectWS();
+            return;
+        }
         this.logger('[feishu] Peer-message mode — WS managed by feishu-bridge');
         // 预同步模板文件到用户目录，后续 buildContextMessage 直接读取
         this.syncTemplateFile();
@@ -353,6 +364,66 @@ export class FeishuClient {
             }, 60000);
         });
         // 启动 peer-messages 轮询（从 feishu-bridge 接收转发的消息）
+        this.startPeerMessagePolling();
+    }
+    /**
+     * 直连模式：创建自己的 WebSocket 连接，不依赖 feishu-bridge
+     * trip bot 等独立 bot 使用自己的 appId/appSecret 建立 WS 长连接
+     */
+    async startDirectWS() {
+        const { createLarkChannel: lc } = await import('@larksuite/channel');
+        const channel = lc({
+            appId: this.config.appId,
+            appSecret: this.config.appSecret,
+            loggerLevel: 3, // info
+            includeRawEvent: false,
+            keepalive: { enabled: true },
+        });
+        this._directChannel = channel;
+        // 非阻塞获取机器人信息
+        this.initializeBotInfo()
+            .then(() => this.logger('Bot info initialized'))
+            .catch((err) => {
+            this.logger(`Bot info init failed (non-blocking): ${err}`);
+        });
+        // 消息到达 → 写入自己的 peer-message 文件
+        const profileName = this.config.profileName || 'default';
+        channel.on('message', (msg) => {
+            const { messageId, chatId, chatType, content } = msg;
+            this.logger(`[directWS] message: id=${messageId} chatId=${chatId} type=${chatType}`);
+            if (!messageId || !chatId)
+                return;
+            const peerMsg = {
+                id: crypto.randomUUID(),
+                from: profileName,
+                chatId,
+                messageId,
+                message: content || '',
+                createdAt: Date.now(),
+                traceId: crypto.randomUUID().slice(0, 8),
+                isGroup: chatType === 'group' || chatId.startsWith('oc_'),
+            };
+            const botName = this.botAppName || profileName;
+            appendPeerMessage(this.claudetalkDir, botName, peerMsg);
+        });
+        // 卡片 action → 直接处理（bridge 模式下由 bridge 处理）
+        channel.on('cardAction', (evt) => {
+            this.logger(`[directWS] card action: type=${evt?.action?.value?.action_type} chatId=${evt?.chatId}`);
+            try {
+                const result = this.handleCardAction(evt);
+                return result;
+            }
+            catch (err) {
+                this.logger(`[directWS] card action error: ${err}`);
+                return { toast: { type: 'error', content: '处理失败' } };
+            }
+        });
+        channel.on('reconnecting', () => this.logger('[directWS] reconnecting...'));
+        channel.on('reconnected', () => this.logger('[directWS] reconnected'));
+        channel.on('error', (err) => this.logger(`[directWS] error: ${err.code}: ${err.message}`));
+        await channel.connect();
+        this.logger('[directWS] WebSocket connected');
+        // 启动 peer-message 轮询（处理自己写入的 peer-message 文件）
         this.startPeerMessagePolling();
     }
     /**
@@ -382,8 +453,9 @@ export class FeishuClient {
                 const prompt = value?.prompt || '';
                 if (!prompt)
                     return { toast: { type: 'error', content: 'execute 需要 prompt 参数' } };
+                const openId = context?.open_id || '';
                 // 异步执行，不阻塞 3s 响应窗口
-                this.execCardAction(chatId, prompt).catch((err) => {
+                this.execCardAction(chatId, prompt, openId).catch((err) => {
                     this.logger(`execCardAction error: ${err}`);
                 });
                 return { toast: { type: 'info', content: '正在执行...' } };
@@ -473,7 +545,7 @@ export class FeishuClient {
     /**
      * 异步执行卡片点击任务：通过 callClaude 处理 → 完成后回复飞书聊天
      */
-    async execCardAction(chatId, prompt) {
+    async execCardAction(chatId, prompt, userId) {
         try {
             this.logger(`execCardAction: chatId=${chatId}, prompt=${prompt.substring(0, 200)}`);
             const workDir = this.config.workDir || process.cwd();
@@ -483,6 +555,7 @@ export class FeishuClient {
                 conversationId: chatId,
                 workDir,
                 isGroup,
+                userId,
                 profile: this.config.profileName,
                 channel: 'feishu',
             });
@@ -632,6 +705,14 @@ export class FeishuClient {
             }
         }
         catch { /* 定时器清理失败为 no-op */ }
+        // 直连模式：关闭自己的 WS 连接
+        if (this._directChannel) {
+            try {
+                this._directChannel.close?.();
+            }
+            catch { /* best-effort */ }
+            this._directChannel = null;
+        }
         this.logger('FeishuClient stopped');
     }
     async sendAndWritePeerMessage(conversationId, content, isGroup) {
@@ -864,6 +945,7 @@ registerChannel({
             appSecret: config.FEISHU_APP_SECRET,
             profileName: config.profileName,
             systemPrompt: config.systemPrompt,
+            directWS: config.directWS === 'true',
         });
     },
 });

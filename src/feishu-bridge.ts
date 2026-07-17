@@ -54,7 +54,11 @@ const CLAUDETALK_DIR = path.join(WORK_DIR, '.claudetalk')
 // API poll constants
 const API_POLL_INTERVAL_MS = 4_000
 const POLL_PAGE_SIZE = 20
-const BOT_APP_ID = 'cli_aa838f41f9f8dbe7'
+// All known bot appIds — messages from any of these are filtered out of polling
+const KNOWN_BOT_APP_IDS = new Set([
+  'cli_aa838f41f9f8dbe7',  // main bot
+  'cli_aad0ac29fdf91bd5',  // trip bot
+])
 const DEDUP_MAX_PER_CHAT = 200
 
 // Service keyword → docker compose service name
@@ -601,7 +605,7 @@ async function pollMessages(api: FeishuApiClient, claudeTalkDir: string, chatIds
     }
 
     const items: any[] = resp.data.items
-    const nonBotItems = items.filter((i: any) => i.sender?.id !== BOT_APP_ID && !_seenMessageIds.get(chatId)?.has(i.message_id))
+    const nonBotItems = items.filter((i: any) => !KNOWN_BOT_APP_IDS.has(i.sender?.id) && !_seenMessageIds.get(chatId)?.has(i.message_id))
     if (nonBotItems.length > 0) {
       console.error(`[feishu-bridge] poll: ${nonBotItems.length} non-bot unseen items in API response, first msgId=${nonBotItems[0].message_id}`)
     }
@@ -615,7 +619,7 @@ async function pollMessages(api: FeishuApiClient, claudeTalkDir: string, chatIds
       const msgId = item.message_id as string
       if (!msgId || seen.has(msgId)) continue
 
-      if (item.sender?.id === BOT_APP_ID) {
+      if (KNOWN_BOT_APP_IDS.has(item.sender?.id)) {
         seen.add(msgId)
         continue
       }

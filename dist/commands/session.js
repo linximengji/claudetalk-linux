@@ -32,7 +32,7 @@ export async function handleSessionCommand(text, context, channel, workDir, prof
         return handleName(name, conversationId, workDir, profile, channel, context);
     }
     if (sub === 'new') {
-        clearSession(conversationId, workDir, profile, context.channelType);
+        clearSession(conversationId, workDir, profile, context.channelType, context.userId, context.isGroup);
         await channel.sendMessage(conversationId, '🔄 已清空当前会话记忆，下次发消息将开启全新对话。', isGroup);
         return true;
     }
@@ -69,7 +69,7 @@ async function handleList(conversationId, workDir, channel, context) {
 /** 命名当前会话 */
 async function handleName(name, conversationId, workDir, profile, channel, context) {
     const sessionMap = getSessionMap(workDir);
-    const sessionKey = getSessionKey(conversationId, workDir, profile, context.channelType);
+    const sessionKey = getSessionKey(conversationId, workDir, profile, context.channelType, context.userId, context.isGroup);
     const entry = sessionMap.get(sessionKey);
     if (!entry) {
         await channel.sendMessage(conversationId, '当前没有活跃会话，发消息后再命名', context.isGroup);
@@ -83,7 +83,7 @@ async function handleName(name, conversationId, workDir, profile, channel, conte
 /** 显示当前会话摘要 */
 async function handleStatus(conversationId, workDir, profile, channel, context) {
     const sessionMap = getSessionMap(workDir);
-    const sessionKey = getSessionKey(conversationId, workDir, profile, context.channelType);
+    const sessionKey = getSessionKey(conversationId, workDir, profile, context.channelType, context.userId, context.isGroup);
     const entry = sessionMap.get(sessionKey);
     if (!entry) {
         await channel.sendMessage(conversationId, '当前没有活跃会话', context.isGroup);
