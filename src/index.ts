@@ -184,8 +184,8 @@ function createChannel(channelType: string, config: ClaudeTalkConfig, workDir: s
     ...(profileName ? { profileName } : {}),
     ...(config.systemPrompt ? { systemPrompt: config.systemPrompt } : {}),
     workDir, // 注入工作目录，用于存储项目级别的配置文件（如 chat-members.json）
-    // trip profile 使用直连 WS 模式（独立 bot，不依赖 feishu-bridge）
-    ...(profileName === 'trip' ? { directWS: 'true' } : {}),
+    // 独立 bot profile 使用直连 WS 模式（不依赖 feishu-bridge）
+    ...(profileName === 'trip' || profileName === 'twin' ? { directWS: 'true' } : {}),
   }
 
   return descriptor.create(enrichedChannelConfig)
@@ -909,6 +909,45 @@ export async function startBot(options: StartBotOptions): Promise<void> {
               } catch { /* ignore */ }
             }
           }
+        }
+
+        // Twin profile: non-streaming with MCP config split by user identity
+        if (profile === 'twin') {
+          const isOwner = context.userId === 'ou_6a6b52dc63d4051834ae522a3a6e7775'
+          const mcpTag = isOwner ? 'rw' : 'ro'
+          process.env.__TWIN_MCP_TAG = mcpTag
+          const finalResult = await callClaude({
+            message,
+            conversationId: context.conversationId,
+            workDir,
+            isGroup: context.isGroup,
+            userId: context.userId,
+            profile,
+            channel: channelType,
+            processedMessage: context.processedMessage,
+          })
+          delete process.env.__TWIN_MCP_TAG
+          logger(`[onMessage] Claude reply (first 200 chars): "${finalResult.substring(0, 200)}"`)
+          _lastConvPair.set(context.conversationId, { message, reply: finalResult })
+          const nrResult = await archiveConversation({ message, reply: finalResult, toolUseCount: 0, toolNames: [], workDir, isGroup: context.isGroup })
+          if (nrResult.category === 'task-pending' && typeof (channel as any).sendCard === 'function') {
+            const cardBody = buildTaskConfirmCard({
+              summary: nrResult.summary || message.slice(0, 50),
+              taskId: nrResult.taskId!,
+              type: inferTaskType(message),
+              priority: inferTaskPriority(message),
+              progressNotes: finalResult.slice(0, 200),
+            })
+            await (channel as any).sendCard(context.conversationId, cardBody, context.isGroup)
+          } else if (nrResult.category === 'task-pending' || nrResult.category === 'completed') {
+            writeTaskToIndex({
+              taskId: nrResult.taskId!,
+              status: nrResult.category === 'task-pending' ? 'pending' : 'completed',
+              summary: nrResult.summary!,
+            })
+          }
+          await channel.sendMessage(context.conversationId, finalResult, context.isGroup)
+          return
         }
 
         const { result: finalResult } = await callClaudeStreaming(

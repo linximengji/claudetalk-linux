@@ -58,6 +58,7 @@ const POLL_PAGE_SIZE = 20
 const KNOWN_BOT_APP_IDS = new Set([
   'cli_aa838f41f9f8dbe7',  // main bot
   'cli_aad0ac29fdf91bd5',  // trip bot
+  'cli_aad19954aa385d11',  // twin bot
 ])
 const DEDUP_MAX_PER_CHAT = 200
 
@@ -292,6 +293,21 @@ function isSystemExecute(prompt: string): boolean {
   return false
 }
 
+/** Determine isGroup from API item's chat_type field, fall back to chatId prefix. */
+function isGroupChat(chatId: string, chatType?: string): boolean {
+  if (chatType === 'group') return true
+  if (chatType === 'p2p') return false
+  return chatId.startsWith('oc_')
+}
+
+/** Determine Feishu receive_id_type from chat_type. group → chat_id, p2p → open_id. */
+function receiptTypeForChat(chatId: string, item?: { chat_type?: string }): string {
+  const ct = item?.chat_type
+  if (ct === 'group') return 'chat_id'
+  if (ct === 'p2p') return 'open_id'
+  return chatId.startsWith('oc_') ? 'chat_id' : 'open_id'
+}
+
 // ========== Card Action Handler ==========
 
 const pendingApprovals = new Map<string, (approved: boolean) => void>()
@@ -328,7 +344,7 @@ function handleCardAction(ctx: CardActionEvent, channel: LarkChannel, botAppName
         message: prompt,
         createdAt: Date.now(),
         traceId: execTraceId,
-        isGroup: chatId.startsWith('oc_'),
+        isGroup: isGroupChat(chatId),
       }
       appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg)
       console.error(`[feishu-bridge] [trace=${execTraceId}] forwarded execute to claudetalk: ${prompt.substring(0, 80)}`)
@@ -410,7 +426,7 @@ function handleCardAction(ctx: CardActionEvent, channel: LarkChannel, botAppName
         const peerMsg: PeerMessage = {
           id: randomUUID(), from: 'feishu-bridge', chatId, messageId,
           message: JSON.stringify({ __approval_callback__: true, requestId, decision: value?.decision }),
-          createdAt: Date.now(), traceId: appTraceId, isGroup: chatId.startsWith('oc_'),
+          createdAt: Date.now(), traceId: appTraceId, isGroup: isGroupChat(chatId),
         }
         appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg)
         console.error(`[feishu-bridge] [trace=${appTraceId}] forwarded approval-action to claudetalk: requestId=${requestId}`)
@@ -423,7 +439,7 @@ function handleCardAction(ctx: CardActionEvent, channel: LarkChannel, botAppName
       const peerMsg: PeerMessage = {
         id: randomUUID(), from: 'feishu-bridge', chatId, messageId,
         message: '__confirm_archive__', createdAt: Date.now(),
-        traceId: archTraceId, isGroup: chatId.startsWith('oc_'),
+        traceId: archTraceId, isGroup: isGroupChat(chatId),
       }
       appendPeerMessage(CLAUDETALK_DIR, 'claudetalk', peerMsg)
       console.error(`[feishu-bridge] [trace=${archTraceId}] forwarded confirm-archive to claudetalk: chatId=${chatId}`)
@@ -661,7 +677,7 @@ async function pollMessages(api: FeishuApiClient, claudeTalkDir: string, chatIds
                       match.answered = true
                       match.answered_at = new Date().toISOString()
                       fs.writeFileSync(gapStatePath, JSON.stringify(gs, null, 2) + '\n', 'utf-8')
-                      const receiptType = chatId.startsWith('oc_') ? 'chat_id' : 'open_id'
+                      const receiptType = receiptTypeForChat(chatId, item)
                       api.sendText(chatId, '✅ 已记录 🎯缺口已回答', receiptType).catch(() => {})
                       console.error(`[feishu-bridge] gap auto-ingested: root_id=${rootId} text=${feedText.substring(0, 60)}`)
                     }
@@ -723,43 +739,40 @@ async function pollMessages(api: FeishuApiClient, claudeTalkDir: string, chatIds
               }
             } catch { /* fallback to default */ }
 
-            // If this reply has a root_id, check if it answers a gap card
-            const rootId = item.root_id as string | undefined
-            if (rootId) {
-              const gapStatePath = path.join(os.homedir(), '.claude', 'twin_gap_state.json')
-              try {
-                if (fs.existsSync(gapStatePath)) {
-                  const raw = fs.readFileSync(gapStatePath, 'utf-8')
-                  const state = JSON.parse(raw)
-                  const gaps = state.gaps || []
-                  let matched = false
-                  for (const gap of gaps) {
-                    if (gap.message_id === rootId && !gap.answered) {
-                      gap.answered = true
-                      gap.answered_at = new Date().toISOString()
-                      matched = true
-                    }
-                  }
-                  if (matched) {
-                    fs.writeFileSync(gapStatePath, JSON.stringify(state, null, 2) + '\n', 'utf-8')
-                    replyText += ' 🎯缺口已回答'
-                    console.error(`[feishu-bridge] /twin gap answered: root_id=${rootId}`)
-                  }
+            // Mark the most recent unanswered gap as answered.
+            // API poll does NOT return root_id for replied messages (Feishu API limitation),
+            // so we match by time: find the latest unanswered gap and mark it done.
+            const gapStatePath = path.join(os.homedir(), '.claude', 'twin_gap_state.json')
+            try {
+              if (fs.existsSync(gapStatePath)) {
+                const raw = fs.readFileSync(gapStatePath, 'utf-8')
+                const state = JSON.parse(raw)
+                const gaps = state.gaps || []
+                // Sort by pushed_at descending, find first unanswered
+                const sorted = [...gaps].filter((g: any) => !g.answered && g.pushed_at)
+                  .sort((a: any, b: any) => new Date(b.pushed_at).getTime() - new Date(a.pushed_at).getTime())
+                const latest = sorted[0]
+                if (latest) {
+                  latest.answered = true
+                  latest.answered_at = new Date().toISOString()
+                  fs.writeFileSync(gapStatePath, JSON.stringify(state, null, 2) + '\n', 'utf-8')
+                  replyText += ' 🎯缺口已回答'
+                  console.error(`[feishu-bridge] /twin gap answered: dim=${latest.dimension}`)
                 }
-              } catch (e2: any) {
-                console.error(`[feishu-bridge] /twin gap state update failed: ${e2.message}`)
               }
+            } catch (e2: any) {
+              console.error(`[feishu-bridge] /twin gap state update failed: ${e2.message}`)
             }
 
             // Send success reply — rich feedback so user knows what happened
-            const receiptType = chatId.startsWith('oc_') ? 'chat_id' : 'open_id'
+            const receiptType = receiptTypeForChat(chatId, item)
             api.sendText(chatId, replyText, receiptType).catch((e2: any) => {
               console.error(`[feishu-bridge] /twin reply failed: ${e2.message}`)
             })
           } catch (e: any) {
             console.error(`[feishu-bridge] /twin ingestion failed: ${e.message}`)
             // Send error reply so user knows something went wrong
-            const receiptType = chatId.startsWith('oc_') ? 'chat_id' : 'open_id'
+            const receiptType = receiptTypeForChat(chatId, item)
             api.sendText(chatId, '❌ 摄入失败，请稍后再试', receiptType).catch((e2: any) => {
               console.error(`[feishu-bridge] /twin error reply failed: ${e2.message}`)
             })
@@ -787,7 +800,7 @@ async function pollMessages(api: FeishuApiClient, claudeTalkDir: string, chatIds
 
       seen.add(msgId)
 
-      const _isGroup = chatId.startsWith('oc_')
+      const _isGroup = isGroupChat(chatId, item.chat_type as string | undefined)
       const traceId = randomUUID().slice(0, 8)
       const peerMsg: PeerMessage = {
         id: randomUUID(),
@@ -916,8 +929,23 @@ async function main() {
   // Connect (liveness now covered by SDK pingTimeout + keepalive.onUnrecoverable)
   await channel.connect()
 
-  // Start API polling for message reception (primary path; WS path disabled)
-  const chatIds = ['oc_44ba0d81afa9189a67ef99d0bce1124d']
+  // Load monitored chat IDs from profile config (fallback to hardcoded default)
+  const configPath = path.join(WORK_DIR, '.claudetalk.json')
+  let chatIds: string[] = ['oc_44ba0d81afa9189a67ef99d0bce1124d']
+  try {
+    if (fs.existsSync(configPath)) {
+      const profiles = JSON.parse(fs.readFileSync(configPath, 'utf-8')).profiles || {}
+      const allChatIds: string[] = []
+      for (const [name, p] of Object.entries(profiles) as any[]) {
+        const id = p?.feishu?.FEISHU_RECEIVE_ID
+        if (id) allChatIds.push(id)
+        else console.error(`[feishu-bridge] profile ${name}: no FEISHU_RECEIVE_ID, chatIds may be incomplete`)
+      }
+      if (allChatIds.length > 0) chatIds = allChatIds
+    }
+  } catch (e: any) {
+    console.error(`[feishu-bridge] failed to load chatIds from config: ${e.message}, using default`)
+  }
   // Warmup: mark historical messages as seen so they don't flood peer-message on restart
   await warmupSeen(apiClient, chatIds)
   console.error(`[feishu-bridge] Starting API poll for ${chatIds.length} chat(s) every ${API_POLL_INTERVAL_MS}ms`)

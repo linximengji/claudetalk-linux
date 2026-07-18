@@ -543,10 +543,19 @@ function buildClaudeArgs(options) {
     const currentSystemPrompt = currentConfig?.systemPrompt;
     const args = ['-p', '--output-format', 'json', '--dangerously-skip-permissions'];
     // MCP config isolation: each profile uses its own MCP config file
+    // Twin profile: __TWIN_MCP_TAG=ro|rw selects access-tiered config
     if (profile) {
-        const mcpConfigPath = join(workDir, '.claudetalk', `${profile}-mcp.json`);
+        const mcpTag = process.env.__TWIN_MCP_TAG;
+        const configName = mcpTag ? `${profile}-mcp-${mcpTag}` : `${profile}-mcp`;
+        const mcpConfigPath = join(workDir, '.claudetalk', `${configName}.json`);
         if (existsSync(mcpConfigPath)) {
             args.push('--mcp-config', mcpConfigPath, '--strict-mcp-config');
+        }
+        else {
+            const fallbackPath = join(workDir, '.claudetalk', `${profile}-mcp.json`);
+            if (existsSync(fallbackPath)) {
+                args.push('--mcp-config', fallbackPath, '--strict-mcp-config');
+            }
         }
     }
     if (existingSessionId && existingEntry) {
@@ -564,7 +573,10 @@ function buildClaudeArgs(options) {
                 args.push('--agents', agentJson);
         }
         else if (profile && !currentSubagentEnabled && currentSystemPrompt) {
-            args.push('--append-system-prompt', currentSystemPrompt);
+            // 如果有同名的 agent.md 文件，用它的 prompt 内容作为 system prompt（支持完整角色定义）
+            const agentMd = parseAgentMdFile(workDir, profile);
+            const systemPromptText = agentMd?.prompt || currentSystemPrompt;
+            args.push('--append-system-prompt', systemPromptText);
         }
     }
     const baseMessage = processedMessage ?? message;
@@ -572,9 +584,21 @@ function buildClaudeArgs(options) {
     const summaryPrefix = existingEntry?.sessionSummary && !existingEntry?.sessionId
         ? `[Previous conversation summary: ${existingEntry.sessionSummary}]\n\n`
         : '';
+    // 为 agent 注入当前会话 chat_id，用于写入 trip JSON
+    const chatIdPrefix = profile && currentSubagentEnabled
+        ? `[当前会话 chat_id: ${conversationId}]\n\n`
+        : '';
+    // Twin profile: inject role prompt on every message so resume keeps personality
+    let rolePrefix = '';
+    if (profile === 'twin' && !currentSubagentEnabled) {
+        const twinMd = parseAgentMdFile(workDir, profile);
+        if (twinMd?.prompt) {
+            rolePrefix = `## 你的角色\n${twinMd.prompt}\n## 以下用户消息\n`;
+        }
+    }
     const actualMessage = profile && currentSubagentEnabled
-        ? `Use the ${profile} agent to handle this: ${summaryPrefix}${baseMessage}`
-        : `${summaryPrefix}${baseMessage}`;
+        ? `Use the ${profile} agent to handle this: ${chatIdPrefix}${summaryPrefix}${baseMessage}`
+        : `${rolePrefix}${summaryPrefix}${baseMessage}`;
     if (existingSessionId) {
         logger(`[claude] Resuming session: conversationId=${conversationId}`);
     }

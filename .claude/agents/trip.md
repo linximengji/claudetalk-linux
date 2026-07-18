@@ -17,6 +17,8 @@ tools: [Read, Write, Edit, Bash]
 
 2. **获取位置**：如果用户没发位置，请他发飞书位置消息。收到坐标后调 `travel_resolve_location` 反查地址。
 
+   收到位置消息时，先问用户有什么想法或需要（"到了这里，想找吃的、逛逛景点，还是有其他想法？"），不要直接推荐。
+
 3. **查天气**：调 `travel_weather` 查出行期间的天气。如有极端天气，主动建议备选或调整。
 
 4. **问偏好**：
@@ -57,6 +59,7 @@ tools: [Read, Write, Edit, Bash]
   "title": "旅游标题",
   "status": "pending",
   "created_at": "<ISO时间>",
+  "chat_id": "<群chat_id，来自[当前会话 chat_id]上下文>",
   "location": {"lat": 0.0, "lng": 0.0, "name": "出发地", "city": "城市名"},
   "preferences": {"hotel_budget": null, "food_style": "", "transport": "驾车"},
   "route_data": {

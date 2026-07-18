@@ -119,7 +119,8 @@ export function writePeerMessagesFromContent(
   messageId: string,
   content: string,
   fromProfile: string,
-  chatMembers: Array<{ name: string; type: string; appId?: string }>
+  chatMembers: Array<{ name: string; type: string; appId?: string }>,
+  isGroup?: boolean
 ): void {
   const mentions = parseAtMentions(content);
   if (mentions.length === 0) return;
@@ -161,7 +162,7 @@ export function writePeerMessagesFromContent(
       messageId,
       message: content,
       createdAt: Date.now(),
-      isGroup: chatId.startsWith('oc_'),
+      isGroup: isGroup ?? chatId.startsWith('oc_'),
     };
 
     appendPeerMessage(claudetalkDir, botName, peerMessage);

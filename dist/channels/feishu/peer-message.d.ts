@@ -51,5 +51,5 @@ export declare function writePeerMessagesFromContent(claudetalkDir: string, chat
     name: string;
     type: string;
     appId?: string;
-}>): void;
+}>, isGroup?: boolean): void;
 //# sourceMappingURL=peer-message.d.ts.map

@@ -156,11 +156,12 @@ export class FeishuClient {
             }
             // 2d. 走 channelMessageHandler 流程（即 Claude CLI 流程）
             if (this.channelMessageHandler) {
+                const senderName = peerMsg.from;
                 const context = {
                     conversationId: peerMsg.chatId,
-                    senderId: peerMsg.from,
+                    senderId: senderName,
                     isGroup: peerMsg.isGroup ?? peerMsg.chatId.startsWith('oc_'),
-                    userId: peerMsg.from,
+                    userId: peerMsg.senderOpenId || senderName,
                     channelType: 'feishu',
                     processedMessage: undefined,
                 };
@@ -378,6 +379,8 @@ export class FeishuClient {
             loggerLevel: 3, // info
             includeRawEvent: false,
             keepalive: { enabled: true },
+            // 接收群聊所有消息（需要飞书开放平台 im:message.group_msg:readonly 权限）
+            policy: { requireMention: false },
         });
         this._directChannel = channel;
         // 非阻塞获取机器人信息
@@ -386,22 +389,48 @@ export class FeishuClient {
             .catch((err) => {
             this.logger(`Bot info init failed (non-blocking): ${err}`);
         });
-        // 消息到达 → 写入自己的 peer-message 文件
+        // 消息到达 → 解析发送人，写入自己的 peer-message 文件
         const profileName = this.config.profileName || 'default';
         channel.on('message', (msg) => {
-            const { messageId, chatId, chatType, content } = msg;
-            this.logger(`[directWS] message: id=${messageId} chatId=${chatId} type=${chatType}`);
+            const { messageId, chatId, chatType, content, mentionedBot, rawContentType } = msg;
+            this.logger(`[directWS] message: id=${messageId} chatId=${chatId} type=${chatType} mentionedBot=${mentionedBot}`);
             if (!messageId || !chatId)
                 return;
+            // 群聊过滤：文本消息仍需 @bot；非文本消息（定位/图片等）直接放行
+            const isGroup = chatType === 'group' || (chatType !== 'p2p' && chatId.startsWith('oc_'));
+            if (isGroup && !mentionedBot) {
+                const isText = !rawContentType || rawContentType === 'text';
+                if (isText) {
+                    this.logger(`[directWS] skip group text without mention: id=${messageId}`);
+                    return;
+                }
+            }
+            const senderOpenId = msg.sender?.open_id || '';
+            const senderName = (() => {
+                if (!senderOpenId)
+                    return profileName;
+                // 阻塞式的同步 resolve 太重，但 directWS 的 on('message') 是 callback，不用 await
+                // 改为在写 peer message 时异步 resolve，写入 from 字段取已知用户名兜底
+                const members = this.chatMemberStore.getMembers(chatId);
+                const existing = members.find(m => m.openId === senderOpenId);
+                return existing ? existing.name : profileName;
+            })();
+            // 异步解析成员信息（写缓存），不阻塞消息投递
+            if (senderOpenId && senderOpenId !== this.botOpenId) {
+                this.chatMemberResolver.resolve(senderOpenId, chatId).then(name => {
+                    this.logger(`[directWS] resolved sender: openId=${senderOpenId} -> ${name}`);
+                }).catch(() => { });
+            }
             const peerMsg = {
                 id: crypto.randomUUID(),
-                from: profileName,
+                from: senderName,
                 chatId,
                 messageId,
                 message: content || '',
                 createdAt: Date.now(),
                 traceId: crypto.randomUUID().slice(0, 8),
-                isGroup: chatType === 'group' || chatId.startsWith('oc_'),
+                isGroup,
+                senderOpenId,
             };
             const botName = this.botAppName || profileName;
             appendPeerMessage(this.claudetalkDir, botName, peerMsg);

@@ -98,7 +98,7 @@ export function parseAtMentions(content) {
  * @param fromProfile - 发送方 profile 名称
  * @param chatMembers - 当前群的成员列表（从 chat-members.json 读取）
  */
-export function writePeerMessagesFromContent(claudetalkDir, chatId, messageId, content, fromProfile, chatMembers) {
+export function writePeerMessagesFromContent(claudetalkDir, chatId, messageId, content, fromProfile, chatMembers, isGroup) {
     const mentions = parseAtMentions(content);
     if (mentions.length === 0)
         return;
@@ -130,7 +130,7 @@ export function writePeerMessagesFromContent(claudetalkDir, chatId, messageId, c
             messageId,
             message: content,
             createdAt: Date.now(),
-            isGroup: chatId.startsWith('oc_'),
+            isGroup: isGroup ?? chatId.startsWith('oc_'),
         };
         appendPeerMessage(claudetalkDir, botName, peerMessage);
         logger(`[peer-message] Wrote peer message to bot_${botName}.json: messageId=${messageId}, from=${fromProfile}`);

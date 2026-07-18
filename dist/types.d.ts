@@ -343,6 +343,8 @@ export interface PeerMessage {
     traceId?: string;
     /** 是否群聊 — bridge 按 chatId 前缀注入 */
     isGroup?: boolean;
+    /** 发言人的飞书 open_id（群聊 @ 回复时使用） */
+    senderOpenId?: string;
 }
 /** 飞书 Channel 专属配置 */
 export interface FeishuProfileConfig {

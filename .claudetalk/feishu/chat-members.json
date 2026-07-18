@@ -11,6 +11,12 @@
       "type": "bot",
       "openId": "ou_0ccf688f512a1ed098c2c7bae2bf2fba",
       "appId": "cli_aad0ac29fdf91bd5"
+    },
+    {
+      "name": "数字分身",
+      "type": "bot",
+      "openId": "ou_c9777ab3403b46ba5af02e5a87e37c57",
+      "appId": "cli_aad19954aa385d11"
     }
   ],
   "oc_b8af2c5c41d7e7c488c3f51e979c1e50": [
@@ -26,6 +32,12 @@
       "type": "bot",
       "openId": "ou_0ccf688f512a1ed098c2c7bae2bf2fba",
       "appId": "cli_aad0ac29fdf91bd5"
+    },
+    {
+      "name": "数字分身",
+      "type": "bot",
+      "openId": "ou_c9777ab3403b46ba5af02e5a87e37c57",
+      "appId": "cli_aad19954aa385d11"
     }
   ]
 }
