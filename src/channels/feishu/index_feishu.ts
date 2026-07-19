@@ -508,9 +508,10 @@ export class FeishuClient implements Channel {
       this.logger(`[directWS] message: id=${messageId} chatId=${chatId} type=${chatType} mentionedBot=${mentionedBot}`);
       if (!messageId || !chatId) return;
 
-      // 群聊过滤：文本消息仍需 @bot；非文本消息（定位/图片等）直接放行
+      // 群聊过滤：非 directWS 模式（即通过 feishu-bridge 轮询）的文本需要 @bot
+      // directWS 模式（trip/twin 等独立 bot）不要求 @，被拉到任何群都自动回复
       const isGroup = chatType === 'group' || (chatType !== 'p2p' && chatId.startsWith('oc_'))
-      if (isGroup && !mentionedBot) {
+      if (isGroup && !mentionedBot && !this.config.directWS) {
         const isText = !rawContentType || rawContentType === 'text'
         if (isText) {
           this.logger(`[directWS] skip group text without mention: id=${messageId}`)

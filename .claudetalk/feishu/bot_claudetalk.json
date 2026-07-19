@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "id": "40f41d8b-1dc5-41da-a17f-794ba6f23625",
+    "from": "claude code",
+    "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
+    "messageId": "om_x100b6afa2dc810a0b3b9050a2ab4629",
+    "message": "去看看途牛飞猪API有没有支持这部分内容的。",
+    "createdAt": 1784473136819,
+    "traceId": "46d58799",
+    "isGroup": true
+  }
+]

@@ -994,7 +994,7 @@ export async function startBot(options: StartBotOptions): Promise<void> {
                 await editStatus(lastText)
                 break
               case 'result':
-                if (!lastText && event.finalResult) {
+                if (event.finalResult) {
                   lastText = event.finalResult
                 }
                 await editStatus(lastText || '任务完成')
@@ -1023,8 +1023,8 @@ export async function startBot(options: StartBotOptions): Promise<void> {
             summary: archiveResult.summary!,
           })
         }
-        // 确保最终消息是完整回复
-        const textToShow = lastText || finalResult
+        // 最终回复优先用 result event 的 finalResult，流式 lastText 可能含 subagent 转发前缀
+        const textToShow = finalResult || lastText
         if (lastEditText !== textToShow && textToShow) {
           try {
             await channel.editMessage!(context.conversationId, statusMsgId, textToShow)
