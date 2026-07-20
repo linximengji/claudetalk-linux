@@ -646,144 +646,6 @@ async function pollMessages(api: FeishuApiClient, claudeTalkDir: string, chatIds
         continue
       }
 
-      // Gap card reply detection: any reply (no /twin prefix needed) to a gap card
-      // is auto-ingested as twin feed. Runs before /twin and @bot checks.
-      if (!messageText.trim().startsWith('/twin')) {
-        const rootId = item.root_id as string | undefined
-        if (rootId) {
-          const gapStatePath = path.join(os.homedir(), '.claude', 'twin_gap_state.json')
-          try {
-            if (fs.existsSync(gapStatePath)) {
-              const gs = JSON.parse(fs.readFileSync(gapStatePath, 'utf-8'))
-              const gaps = gs.gaps || []
-              const match = gaps.find((g: any) => g.message_id === rootId && !g.answered)
-              if (match) {
-                const feedText = messageText.trim()
-                if (feedText) {
-                  const twinPath = '/home/ubuntu/projects/digital-clone'
-                  const tmpFile = `/tmp/twin_feed_${Date.now()}.txt`
-                  try {
-                    fs.writeFileSync(tmpFile, feedText, 'utf-8')
-                    const r = spawnSync('python3', [
-                      '-c', [
-                        `import sys; sys.path.insert(0, '${twinPath}')`,
-                        `from twin.ingestion import ingest_text`,
-                        `with open('${tmpFile}', 'r', encoding='utf-8') as f:`,
-                        `  content = f.read()`,
-                        `print(ingest_text('feishu_twin', content))`,
-                      ].join('\n')
-                    ], { timeout: 60_000, encoding: 'utf-8', stdio: 'pipe' })
-                    if (r.status === 0) {
-                      match.answered = true
-                      match.answered_at = new Date().toISOString()
-                      fs.writeFileSync(gapStatePath, JSON.stringify(gs, null, 2) + '\n', 'utf-8')
-                      const receiptType = receiptTypeForChat(chatId, item)
-                      api.sendText(chatId, '✅ 已记录 🎯缺口已回答', receiptType).catch(() => {})
-                      console.error(`[feishu-bridge] gap auto-ingested: root_id=${rootId} text=${feedText.substring(0, 60)}`)
-                    }
-                  } catch { /* gap ingestion failed, fall through */ }
-                  finally { try { fs.unlinkSync(tmpFile) } catch {} }
-                  seen.add(msgId)
-                  continue
-                }
-              }
-            }
-          } catch { /* gap check failed, fall through */ }
-        }
-      }
-
-      // /twin command: route directly to digital twin ingestion, bypass CC
-      // MUST check BEFORE @bot filter — /twin in group chat doesn't need @mention
-      if (messageText.trim().startsWith('/twin')) {
-        const feedContent = messageText.trim().slice(5).trim()
-        if (feedContent) {
-          const twinPath = '/home/ubuntu/projects/digital-clone'
-          const tmpFile = `/tmp/twin_feed_${Date.now()}.txt`
-          let ingestOk = false
-          try {
-            fs.writeFileSync(tmpFile, feedContent, 'utf-8')
-            const r = spawnSync('python3', [
-              '-c', [
-`import sys; sys.path.insert(0, '${twinPath}')`,
-`from twin.ingestion import ingest_text`,
-`with open('${tmpFile}', 'r', encoding='utf-8') as f:`,
-`  content = f.read()`,
-`print(ingest_text('feishu_twin', content))`,
-              ].join('\n')
-            ], { timeout: 60_000, encoding: 'utf-8', stdio: 'pipe' })
-            if (r.error) throw r.error
-            if (r.status !== 0) throw new Error(`exit code ${r.status}: ${r.stderr?.substring(0, 200) || 'unknown'}`)
-            console.error(`[feishu-bridge] /twin ingested: ${feedContent.substring(0, 80)} | result=${r.stdout?.substring(0, 100)}`)
-            ingestOk = true
-
-            // Parse ingestion result for rich feedback
-            const stdout = r.stdout?.trim() || ''
-            let replyText = '✅ 已摄入'
-            try {
-              if (stdout === 'already ingested (duplicate)') {
-                replyText = '♻️ 已摄入（内容重复，跳过）'
-              } else if (stdout.startsWith('{')) {
-                const result = JSON.parse(stdout)
-                const stored = result.stored ?? 0
-                const skipped = result.skipped || ''
-                if (skipped === 'noise') {
-                  replyText = '⏭️ 内容较浅，未收录'
-                } else if (skipped === 'duplicate') {
-                  replyText = '♻️ 内容重复，未收录'
-                } else if (stored > 0) {
-                  const types = result.types || []
-                  const tag = types.join('+') || '记忆'
-                  const p = result.persona_updated ? ' 画像已更新' : ''
-                  replyText = `✅ 已摄入（${tag}${p}）`
-                }
-              }
-            } catch { /* fallback to default */ }
-
-            // Mark the most recent unanswered gap as answered.
-            // API poll does NOT return root_id for replied messages (Feishu API limitation),
-            // so we match by time: find the latest unanswered gap and mark it done.
-            const gapStatePath = path.join(os.homedir(), '.claude', 'twin_gap_state.json')
-            try {
-              if (fs.existsSync(gapStatePath)) {
-                const raw = fs.readFileSync(gapStatePath, 'utf-8')
-                const state = JSON.parse(raw)
-                const gaps = state.gaps || []
-                // Sort by pushed_at descending, find first unanswered
-                const sorted = [...gaps].filter((g: any) => !g.answered && g.pushed_at)
-                  .sort((a: any, b: any) => new Date(b.pushed_at).getTime() - new Date(a.pushed_at).getTime())
-                const latest = sorted[0]
-                if (latest) {
-                  latest.answered = true
-                  latest.answered_at = new Date().toISOString()
-                  fs.writeFileSync(gapStatePath, JSON.stringify(state, null, 2) + '\n', 'utf-8')
-                  replyText += ' 🎯缺口已回答'
-                  console.error(`[feishu-bridge] /twin gap answered: dim=${latest.dimension}`)
-                }
-              }
-            } catch (e2: any) {
-              console.error(`[feishu-bridge] /twin gap state update failed: ${e2.message}`)
-            }
-
-            // Send success reply — rich feedback so user knows what happened
-            const receiptType = receiptTypeForChat(chatId, item)
-            api.sendText(chatId, replyText, receiptType).catch((e2: any) => {
-              console.error(`[feishu-bridge] /twin reply failed: ${e2.message}`)
-            })
-          } catch (e: any) {
-            console.error(`[feishu-bridge] /twin ingestion failed: ${e.message}`)
-            // Send error reply so user knows something went wrong
-            const receiptType = receiptTypeForChat(chatId, item)
-            api.sendText(chatId, '❌ 摄入失败，请稍后再试', receiptType).catch((e2: any) => {
-              console.error(`[feishu-bridge] /twin error reply failed: ${e2.message}`)
-            })
-          } finally {
-            try { fs.unlinkSync(tmpFile) } catch {}
-          }
-        }
-        seen.add(msgId)
-        continue
-      }
-
       // Group chat: only forward messages that @mention the bot
       // Private chat (has mentions field with bot itself or no mentions at all): forward all
       const hasMentions = item.mentions && Array.isArray(item.mentions) && item.mentions.length > 0
@@ -802,6 +664,7 @@ async function pollMessages(api: FeishuApiClient, claudeTalkDir: string, chatIds
 
       const _isGroup = isGroupChat(chatId, item.chat_type as string | undefined)
       const traceId = randomUUID().slice(0, 8)
+      const senderOpenId = item.sender?.sender_id?.open_id as string | undefined
       const peerMsg: PeerMessage = {
         id: randomUUID(),
         from: botAppName || 'feishu-bridge',
@@ -811,6 +674,7 @@ async function pollMessages(api: FeishuApiClient, claudeTalkDir: string, chatIds
         createdAt: Date.now(),
         traceId,
         isGroup: _isGroup,
+        senderOpenId,
       }
       appendPeerMessage(claudeTalkDir, 'claudetalk', peerMsg)
       totalNew++

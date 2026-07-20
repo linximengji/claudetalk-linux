@@ -10,6 +10,7 @@ import { HELP_TEXT } from './utils/index.js'
 import { isCloudflaredAlive, getCloudflaredPath } from './core/proc.js'
 import { summarizeStep } from './core/step-summarizer.js'
 import { archiveConversation, writeTaskToIndex } from './core/phone-archive.js'
+import { logInteraction } from './core/twin-interactions.js'
 import { getPhoneTasksDir, OPS_DAEMON_DIR } from './core/paths.js'
 import { closeLogFile, initLogFile } from './core/logger.js'
 import { stopMcpServer } from './mcp-server.js'
@@ -505,10 +506,12 @@ export async function startBot(options: StartBotOptions): Promise<void> {
 
     // 内置指令：帮助
     if (HELP_COMMANDS.has(command)) {
+      const helpText = HELP_TEXT(profile)
+      const debugPrefix = `[profile=${profile}]\n\n`
       if (typeof (channel as any).sendMarkdownCard === 'function') {
-        await (channel as any).sendMarkdownCard(context.conversationId, HELP_TEXT, context.isGroup)
+        await (channel as any).sendMarkdownCard(context.conversationId, debugPrefix + helpText, context.isGroup)
       } else {
-        await channel.sendMessage(context.conversationId, HELP_TEXT, context.isGroup)
+        await channel.sendMessage(context.conversationId, debugPrefix + helpText, context.isGroup)
       }
       return
     }
@@ -814,6 +817,8 @@ export async function startBot(options: StartBotOptions): Promise<void> {
             toolNames: [],
             workDir,
             isGroup: context.isGroup,
+            userId: context.userId,
+            channel: channelType,
           })
           await channel.sendMessage(context.conversationId, '✅ 已加入手机待办', context.isGroup)
         }
@@ -913,9 +918,30 @@ export async function startBot(options: StartBotOptions): Promise<void> {
 
         // Twin profile: non-streaming with MCP config split by user identity
         if (profile === 'twin') {
-          const isOwner = context.userId === 'ou_6a6b52dc63d4051834ae522a3a6e7775'
+          // Load user registry and look up caller identity
+          let callerLevel = 'stranger'
+          let callerName = '陌生人'
+          let callerDesc = '陌生人'
+          const usersPath = join(workDir, '.claudetalk', 'twin', 'users.json')
+          try {
+            if (existsSync(usersPath)) {
+              const users = JSON.parse(readFileSync(usersPath, 'utf-8'))
+              const userEntry = users[context.userId]
+              if (userEntry) {
+                callerLevel = userEntry.level
+                callerName = userEntry.name
+                callerDesc = userEntry.description
+              } else {
+                // Fallback: map default levels if user not registered
+                callerName = `用户(${context.userId.slice(0, 16)}...)`
+              }
+            }
+          } catch { /* best-effort */ }
+          const isOwner = callerLevel === 'owner'
+          const callerInfo = JSON.stringify({ userId: context.userId, name: callerName, level: callerLevel, description: callerDesc })
           const mcpTag = isOwner ? 'rw' : 'ro'
           process.env.__TWIN_MCP_TAG = mcpTag
+          process.env.__TWIN_CALLER = callerInfo
           const finalResult = await callClaude({
             message,
             conversationId: context.conversationId,
@@ -927,9 +953,20 @@ export async function startBot(options: StartBotOptions): Promise<void> {
             processedMessage: context.processedMessage,
           })
           delete process.env.__TWIN_MCP_TAG
+          delete process.env.__TWIN_CALLER
           logger(`[onMessage] Claude reply (first 200 chars): "${finalResult.substring(0, 200)}"`)
           _lastConvPair.set(context.conversationId, { message, reply: finalResult })
-          const nrResult = await archiveConversation({ message, reply: finalResult, toolUseCount: 0, toolNames: [], workDir, isGroup: context.isGroup })
+          const nrResult = await archiveConversation({
+            message, reply: finalResult,
+            toolUseCount: 0, toolNames: [], workDir, isGroup: context.isGroup,
+            userId: context.userId, channel: channelType, profile,
+          })
+          // 记录 twin 交互日志
+          logInteraction({
+            workDir, userId: context.userId,
+            name: callerName, level: callerLevel,
+            channel: channelType, profile,
+          })
           if (nrResult.category === 'task-pending' && typeof (channel as any).sendCard === 'function') {
             const cardBody = buildTaskConfirmCard({
               summary: nrResult.summary || message.slice(0, 50),
@@ -1005,7 +1042,7 @@ export async function startBot(options: StartBotOptions): Promise<void> {
 
         logger(`[onMessage] Claude stream reply (first 200 chars): "${finalResult.substring(0, 200)}"`)
         _lastConvPair.set(context.conversationId, { message, reply: finalResult })
-        const archiveResult = await archiveConversation({ message, reply: finalResult, toolUseCount: currentStepNumber, toolNames: collectedToolNames, workDir, isGroup: context.isGroup })
+        const archiveResult = await archiveConversation({ message, reply: finalResult, toolUseCount: currentStepNumber, toolNames: collectedToolNames, workDir, isGroup: context.isGroup, userId: context.userId, channel: channelType })
         // task-pending + 飞书→发确认卡片；否则直接写 index.json
         if (archiveResult.category === 'task-pending' && typeof (channel as any).sendCard === 'function') {
           const cardBody = buildTaskConfirmCard({
@@ -1044,7 +1081,7 @@ export async function startBot(options: StartBotOptions): Promise<void> {
         })
         logger(`[onMessage] Claude reply (first 200 chars): "${replyText.substring(0, 200)}"`)
         _lastConvPair.set(context.conversationId, { message, reply: replyText })
-        const nrResult = await archiveConversation({ message, reply: replyText, toolUseCount: 0, toolNames: [], workDir, isGroup: context.isGroup })
+        const nrResult = await archiveConversation({ message, reply: replyText, toolUseCount: 0, toolNames: [], workDir, isGroup: context.isGroup, userId: context.userId, channel: channelType })
         if (nrResult.category === 'task-pending' && typeof (channel as any).sendCard === 'function') {
           const cardBody = buildTaskConfirmCard({
             summary: nrResult.summary || message.slice(0, 50),
@@ -1096,7 +1133,7 @@ export async function startBot(options: StartBotOptions): Promise<void> {
     if (lastSession?.userId) {
       logger(`[notify] Found last private session userId=${lastSession.userId} convId=${lastSession.conversationId}`)
       _notifyTarget = lastSession.conversationId
-      await channel.sendOnlineNotification(lastSession.conversationId, workDir).catch((error) => {
+      await channel.sendOnlineNotification(lastSession.conversationId, workDir, profile).catch((error) => {
         logger(`[notify] 上线通知发送失败: ${error}`)
       })
     } else {
@@ -1109,7 +1146,7 @@ export async function startBot(options: StartBotOptions): Promise<void> {
           if (peerData.length > 0) {
             const chatId = peerData[0].chatId
             logger(`[notify] Fallback to group notification: chatId=${chatId}`)
-            await (channel.sendOnlineNotification as (userId: string, workDir: string) => Promise<void>)(chatId, workDir).catch((error) => {
+            await (channel.sendOnlineNotification as (userId: string, workDir: string, profile?: string) => Promise<void>)(chatId, workDir, profile).catch((error) => {
               logger(`[notify] 群聊上线通知发送失败: ${error}`)
             })
           }

@@ -62,8 +62,8 @@ export class DingTalkClient {
     /**
      * 发送上线通知（实现 Channel 接口）
      */
-    async sendOnlineNotification(userId, workDir) {
-        const notifyText = buildOnlineNotification(workDir);
+    async sendOnlineNotification(userId, workDir, profile) {
+        const notifyText = buildOnlineNotification(workDir, profile);
         try {
             await this.sendPrivateMessage(userId, notifyText, 'sampleText');
         }

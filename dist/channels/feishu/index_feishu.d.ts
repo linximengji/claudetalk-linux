@@ -64,7 +64,7 @@ export declare class FeishuClient implements Channel {
     /**
      * 发送上线通知（实现 Channel 接口）
      */
-    sendOnlineNotification(userId: string, workDir: string): Promise<void>;
+    sendOnlineNotification(userId: string, workDir: string, profile?: string): Promise<void>;
     /**
      * 获取 Tenant Access Token
      */

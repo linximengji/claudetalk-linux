@@ -115,8 +115,8 @@ export class DingTalkClient implements Channel {
   /**
    * 发送上线通知（实现 Channel 接口）
    */
-  async sendOnlineNotification(userId: string, workDir: string): Promise<void> {
-    const notifyText = buildOnlineNotification(workDir);
+  async sendOnlineNotification(userId: string, workDir: string, profile?: string): Promise<void> {
+    const notifyText = buildOnlineNotification(workDir, profile);
     try {
       await this.sendPrivateMessage(userId, notifyText, 'sampleText');
     } catch (error) {

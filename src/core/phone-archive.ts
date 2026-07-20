@@ -19,6 +19,7 @@ export interface ArchiveResult {
   dateStr: string
   seq: string
   dir: string
+  userId?: string
 }
 
 /** Extract a meaningful summary for the task index entry. */
@@ -43,6 +44,12 @@ export interface ArchiveOptions {
   toolNames: string[]
   workDir: string
   isGroup: boolean
+  /** 发送者标识（可选，用于交互日志关联） */
+  userId?: string
+  /** 消息通道类型（可选） */
+  channel?: string
+  /** 对话 profile 名称（可选，如 twin / default） */
+  profile?: string
 }
 
 export async function archiveConversation(opts: ArchiveOptions): Promise<ArchiveResult> {
@@ -88,13 +95,20 @@ export async function archiveConversation(opts: ArchiveOptions): Promise<Archive
 
     writeFileSync(join(dir, '消息.md'), msgText + '\n', 'utf-8')
     writeFileSync(join(dir, '回复.md'), reply + '\n', 'utf-8')
+    // 用户元数据（仅当有 userId 时写入，用于交互关联）
+    if (opts.userId) {
+      const meta: Record<string, string> = { userId: opts.userId, ts: new Date().toISOString() }
+      if (opts.channel) meta.channel = opts.channel
+      if (opts.profile) meta.profile = opts.profile
+      writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n', 'utf-8')
+    }
 
     // 分类：completed（已终端完成）vs task-pending（需终端处理）vs reference（参考归档）
     const category: TaskCategory = await classifyConversation(message, reply, opts.toolNames)
     const categoryLabel = category === 'task-pending' ? '待办' : category === 'completed' ? '已完成' : '归档'
     logger(`archive classify: ${category}, category=${categoryLabel}, tools=[${opts.toolNames.join(', ')}]`)
 
-    const result: ArchiveResult = { category, slug, dateStr, seq, dir }
+    const result: ArchiveResult = { category, slug, dateStr, seq, dir, userId: opts.userId }
 
     if (category === 'task-pending' || category === 'completed') {
       const taskId = `${dateStr}/${seq}-${slug}`

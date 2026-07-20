@@ -1,4 +1,4 @@
-export declare const HELP_TEXT: string;
-/** 上线通知精简版 — 只显示核心指令，引导用户发 /help 看全部 */
-export declare function buildOnlineNotification(workDir: string): string;
+export declare function HELP_TEXT(profile?: string): string;
+/** 场景专属上线通知 — 精简指令 + 场景说明 */
+export declare function buildOnlineNotification(workDir: string, profile?: string): string;
 //# sourceMappingURL=help-text.d.ts.map

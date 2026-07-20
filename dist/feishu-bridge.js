@@ -805,6 +805,7 @@ async function pollMessages(api, claudeTalkDir, chatIds, botAppName) {
             seen.add(msgId);
             const _isGroup = isGroupChat(chatId, item.chat_type);
             const traceId = randomUUID().slice(0, 8);
+            const senderOpenId = item.sender?.sender_id?.open_id;
             const peerMsg = {
                 id: randomUUID(),
                 from: botAppName || 'feishu-bridge',
@@ -814,6 +815,7 @@ async function pollMessages(api, claudeTalkDir, chatIds, botAppName) {
                 createdAt: Date.now(),
                 traceId,
                 isGroup: _isGroup,
+                senderOpenId,
             };
             appendPeerMessage(claudeTalkDir, 'claudetalk', peerMsg);
             totalNew++;

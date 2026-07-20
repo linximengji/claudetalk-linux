@@ -41,7 +41,7 @@ export declare class DiscordClient implements Channel {
      * 发送上线通知（实现 Channel 接口）
      * 通过 DM 发送给指定用户
      */
-    sendOnlineNotification(userId: string, workDir: string): Promise<void>;
+    sendOnlineNotification(userId: string, workDir: string, profile?: string): Promise<void>;
     /**
      * 获取频道历史消息（Discord 专有能力）
      * 可在新建 session 时注入上下文

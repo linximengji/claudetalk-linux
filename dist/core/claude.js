@@ -593,7 +593,20 @@ function buildClaudeArgs(options) {
     if (profile === 'twin' && !currentSubagentEnabled) {
         const twinMd = parseAgentMdFile(workDir, profile);
         if (twinMd?.prompt) {
-            rolePrefix = `## 你的角色\n${twinMd.prompt}\n## 以下用户消息\n`;
+            // Append dynamic caller identity context (set by index.ts twin handler)
+            const callerEnv = process.env.__TWIN_CALLER;
+            let callerSuffix = '';
+            if (callerEnv) {
+                try {
+                    const caller = JSON.parse(callerEnv);
+                    callerSuffix = `\n\n## 当前对话用户\n- userId: ${caller.userId}\n- name: ${caller.name}\n- level: ${caller.level}\n- description: ${caller.description}\n\n` +
+                        (caller.level === 'owner'
+                            ? '此消息来自数字分身的主人。回答的同时自动摄入到记忆库。启用 rw 模式（读写记忆）。'
+                            : '此消息来自其他人。只基于已有记忆回答，不记录对话内容。启用 ro 模式（只读记忆）。');
+                }
+                catch { /* ignore */ }
+            }
+            rolePrefix = `## 你的角色\n${twinMd.prompt}${callerSuffix}\n## 以下用户消息\n`;
         }
     }
     const actualMessage = profile && currentSubagentEnabled

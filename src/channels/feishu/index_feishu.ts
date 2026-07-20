@@ -6,8 +6,10 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import os from 'os';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { spawnSync } from 'child_process';
 import type {
   Channel,
   ChannelMessageContext,
@@ -296,8 +298,8 @@ export class FeishuClient implements Channel {
   /**
    * 发送上线通知（实现 Channel 接口）
    */
-  async sendOnlineNotification(userId: string, workDir: string): Promise<void> {
-    const notifyText = buildOnlineNotification(workDir);
+  async sendOnlineNotification(userId: string, workDir: string, profile?: string): Promise<void> {
+    const notifyText = buildOnlineNotification(workDir, profile);
     try {
       await this.sendMarkdownCard(userId, notifyText, false);
     } catch (error) {
@@ -476,6 +478,127 @@ export class FeishuClient implements Channel {
   }
 
   /**
+   * 处理 gap 卡片的回复：rootId 匹配 twin_gap_state.json 中的未回答 gap
+   * 调用 digital-clone 的 ingestion，标记答，返回 true 表示已处理
+   * 同时 /twin 指令也由这里处理
+   */
+  private tryHandleGapOrTwin(msg: any, api: { sendTextMessage: (receiverId: string, content: string, isGroup: boolean) => Promise<any> }): boolean {
+    const content = msg.content || '';
+    const trimmed = content.trim();
+    const profileName = this.config.profileName || '';
+
+    // 只有 twin profile 处理 gap
+    if (profileName !== 'twin') return false;
+
+    const twinPath = '/home/ubuntu/projects/digital-clone';
+    const gapStatePath = path.join(os.homedir(), '.claude', 'twin_gap_state.json');
+
+    // /twin 指令：主动投喂
+    if (trimmed.startsWith('/twin')) {
+      const feedContent = trimmed.slice(5).trim();
+      if (!feedContent) return false;
+
+      const tmpFile = `/tmp/twin_feed_${Date.now()}.txt`;
+      let replyText = '✅ 已摄入';
+      try {
+        fs.writeFileSync(tmpFile, feedContent, 'utf-8');
+        const r = spawnSync('python3', [
+          '-c', [
+            `import sys; sys.path.insert(0, '${twinPath}')`,
+            `from twin.ingestion import ingest_text`,
+            `with open('${tmpFile}', 'r', encoding='utf-8') as f:`,
+            `  content = f.read()`,
+            `print(ingest_text('feishu_twin', content))`,
+          ].join('\n')
+        ], { timeout: 60_000, encoding: 'utf-8', stdio: 'pipe' });
+
+        if (r.status !== 0) throw new Error(`exit code ${r.status}`);
+
+        const stdout = r.stdout?.trim() || '';
+        try {
+          if (stdout === 'already ingested (duplicate)') {
+            replyText = '♻️ 已摄入（内容重复，跳过）';
+          } else if (stdout.startsWith('{')) {
+            const result = JSON.parse(stdout);
+            if (result.skipped === 'noise') replyText = '⏭️ 内容较浅，未收录';
+            else if (result.skipped === 'duplicate') replyText = '♻️ 内容重复，未收录';
+            else if (result.stored > 0) {
+              const tag = (result.types || []).join('+') || '记忆';
+              replyText = result.persona_updated ? `✅ 已摄入（${tag} 画像已更新）` : `✅ 已摄入（${tag}）`;
+            }
+          }
+        } catch { /* fallback */ }
+
+        // 标记最新未回答 gap
+        try {
+          if (fs.existsSync(gapStatePath)) {
+            const state = JSON.parse(fs.readFileSync(gapStatePath, 'utf-8'));
+            const gaps = state.gaps || [];
+            const sorted = gaps.filter((g: any) => !g.answered && g.pushed_at)
+              .sort((a: any, b: any) => new Date(b.pushed_at).getTime() - new Date(a.pushed_at).getTime());
+            if (sorted[0]) {
+              sorted[0].answered = true;
+              sorted[0].answered_at = new Date().toISOString();
+              fs.writeFileSync(gapStatePath, JSON.stringify(state, null, 2) + '\n', 'utf-8');
+              replyText += ' 🎯缺口已回答';
+            }
+          }
+        } catch { /* best effort */ }
+
+        this.logger(`[directWS] /twin ingested: ${feedContent.substring(0, 80)}, reply=${replyText}`);
+        const isGroup = msg.chatType === 'group' || msg.chatId?.startsWith('oc_');
+        api.sendTextMessage(msg.chatId, replyText, isGroup).catch(() => {});
+      } catch (e: any) {
+        this.logger(`[directWS] /twin ingestion failed: ${e.message}`);
+        const isGroup = msg.chatType === 'group' || msg.chatId?.startsWith('oc_');
+        api.sendTextMessage(msg.chatId, '❌ 摄入失败，请稍后再试', isGroup).catch(() => {});
+      } finally {
+        try { fs.unlinkSync(tmpFile) } catch {}
+      }
+      return true;
+    }
+
+    // Gap card reply detection（非 /twin 但 rootId 匹配未回答 gap）
+    if (trimmed && msg.rootId && !trimmed.startsWith('/')) {
+      try {
+        if (!fs.existsSync(gapStatePath)) return false;
+        const gs = JSON.parse(fs.readFileSync(gapStatePath, 'utf-8'));
+        const gaps = gs.gaps || [];
+        const match = gaps.find((g: any) => g.message_id === msg.rootId && !g.answered);
+        if (!match) return false;
+
+        const feedText = trimmed;
+        const tmpFile = `/tmp/twin_feed_${Date.now()}.txt`;
+        try {
+          fs.writeFileSync(tmpFile, feedText, 'utf-8');
+          const r = spawnSync('python3', [
+            '-c', [
+              `import sys; sys.path.insert(0, '${twinPath}')`,
+              `from twin.ingestion import ingest_text`,
+              `with open('${tmpFile}', 'r', encoding='utf-8') as f:`,
+              `  content = f.read()`,
+              `print(ingest_text('feishu_twin', content))`,
+            ].join('\n')
+          ], { timeout: 60_000, encoding: 'utf-8', stdio: 'pipe' });
+
+          if (r.status === 0) {
+            match.answered = true;
+            match.answered_at = new Date().toISOString();
+            fs.writeFileSync(gapStatePath, JSON.stringify(gs, null, 2) + '\n', 'utf-8');
+            const isGroup = msg.chatType === 'group' || msg.chatId?.startsWith('oc_');
+            api.sendTextMessage(msg.chatId, '✅ 已记录 🎯缺口已回答', isGroup).catch(() => {});
+            this.logger(`[directWS] gap auto-ingested: rootId=${msg.rootId} text=${feedText.substring(0, 60)}`);
+          }
+        } catch { /* fall through */ }
+        finally { try { fs.unlinkSync(tmpFile) } catch {} }
+        return true;
+      } catch { /* not a gap, fall through */ }
+    }
+
+    return false;
+  }
+
+  /**
    * 直连模式：创建自己的 WebSocket 连接，不依赖 feishu-bridge
    * trip bot 等独立 bot 使用自己的 appId/appSecret 建立 WS 长连接
    */
@@ -508,6 +631,9 @@ export class FeishuClient implements Channel {
       this.logger(`[directWS] message: id=${messageId} chatId=${chatId} type=${chatType} mentionedBot=${mentionedBot}`);
       if (!messageId || !chatId) return;
 
+      // Gap 回复 + /twin 指令拦截：不进入 peer-message 流程
+      if (this.tryHandleGapOrTwin(msg, this)) return;
+
       // 群聊过滤：非 directWS 模式（即通过 feishu-bridge 轮询）的文本需要 @bot
       // directWS 模式（trip/twin 等独立 bot）不要求 @，被拉到任何群都自动回复
       const isGroup = chatType === 'group' || (chatType !== 'p2p' && chatId.startsWith('oc_'))
@@ -518,7 +644,7 @@ export class FeishuClient implements Channel {
           return
         }
       }
-      const senderOpenId = msg.sender?.open_id || '';
+      const senderOpenId = msg.senderId || '';
       const senderName = (() => {
         if (!senderOpenId) return profileName;
         // 阻塞式的同步 resolve 太重，但 directWS 的 on('message') 是 callback，不用 await
@@ -747,6 +873,7 @@ export class FeishuClient implements Channel {
         toolNames: [],
         workDir,
         isGroup,
+        channel: 'feishu',
       });
       if (result.taskId && result.summary) {
         writeTaskToIndex({

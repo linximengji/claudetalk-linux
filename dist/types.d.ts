@@ -277,7 +277,7 @@ export interface Channel {
     /** 发送消息 */
     sendMessage(conversationId: string, content: string, isGroup: boolean): Promise<void>;
     /** 发送上线通知（可选，各 Channel 自行实现） */
-    sendOnlineNotification?(userId: string, workDir: string): Promise<void>;
+    sendOnlineNotification?(userId: string, workDir: string, profile?: string): Promise<void>;
     /** 获取历史消息（Discord 专有，钉钉不支持） */
     getHistoryMessages?(conversationId: string, limit?: number): Promise<string[]>;
     /** 编辑已发送的消息（可选，飞书通过 PUT 支持，最多编辑 20 次） */

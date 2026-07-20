@@ -147,8 +147,8 @@ export class DiscordClient {
      * 发送上线通知（实现 Channel 接口）
      * 通过 DM 发送给指定用户
      */
-    async sendOnlineNotification(userId, workDir) {
-        const notifyText = buildOnlineNotification(workDir);
+    async sendOnlineNotification(userId, workDir, profile) {
+        const notifyText = buildOnlineNotification(workDir, profile);
         try {
             const user = await this.client.users.fetch(userId);
             const dmChannel = await user.createDM();

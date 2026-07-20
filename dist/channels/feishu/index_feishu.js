@@ -210,8 +210,8 @@ export class FeishuClient {
     /**
      * 发送上线通知（实现 Channel 接口）
      */
-    async sendOnlineNotification(userId, workDir) {
-        const notifyText = buildOnlineNotification(workDir);
+    async sendOnlineNotification(userId, workDir, profile) {
+        const notifyText = buildOnlineNotification(workDir, profile);
         try {
             await this.sendMarkdownCard(userId, notifyText, false);
         }
@@ -406,7 +406,7 @@ export class FeishuClient {
                     return;
                 }
             }
-            const senderOpenId = msg.sender?.open_id || '';
+            const senderOpenId = msg.senderId || '';
             const senderName = (() => {
                 if (!senderOpenId)
                     return profileName;
