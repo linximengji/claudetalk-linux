@@ -7,6 +7,7 @@ export interface ArchiveResult {
     dateStr: string;
     seq: string;
     dir: string;
+    userId?: string;
 }
 export interface ArchiveOptions {
     message: string;
@@ -15,6 +16,12 @@ export interface ArchiveOptions {
     toolNames: string[];
     workDir: string;
     isGroup: boolean;
+    /** 发送者标识（可选，用于交互日志关联） */
+    userId?: string;
+    /** 消息通道类型（可选） */
+    channel?: string;
+    /** 对话 profile 名称（可选，如 twin / default） */
+    profile?: string;
 }
 export declare function archiveConversation(opts: ArchiveOptions): Promise<ArchiveResult>;
 /**

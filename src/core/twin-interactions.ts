@@ -4,6 +4,7 @@ import { createLogger } from './logger.js'
 
 const logger = createLogger('twin-interactions')
 const INTERACTIONS_FILE = '.claudetalk/twin/interactions.jsonl'
+const OBSERVATIONS_FILE = '.claudetalk/twin/external-observations.jsonl'
 
 export interface InteractionEntry {
   ts: string
@@ -141,6 +142,59 @@ export function searchUser(workDir: string, userId: string): InteractionEntry[] 
     } catch { /* skip */ }
   }
   return results
+}
+
+/**
+ * 记录群聊中非 owner 的外部消息，用于后续 gap 检测。
+ * 写入 twin/external-observations.jsonl（append-only），每条包含：
+ *  - ts: 时间戳
+ *  - userId: 飞书 open_id
+ *  - name: 显示名称
+ *  - message: 消息内容（前 200 字）
+ *  - chatId: 群 ID
+ */
+export function logExternalObservation(opts: {
+  workDir: string
+  userId: string
+  name: string
+  message: string
+  chatId: string
+}): void {
+  try {
+    const dir = join(opts.workDir, '.claudetalk', 'twin')
+    if (!existsSync(dir)) return
+    const entry = {
+      ts: new Date().toISOString(),
+      userId: opts.userId,
+      name: opts.name,
+      message: opts.message.slice(0, 200),
+      chatId: opts.chatId,
+    }
+    appendFileSync(join(dir, 'external-observations.jsonl'), JSON.stringify(entry) + '\n', 'utf-8')
+  } catch (err) {
+    logger(`logExternalObservation error: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+/**
+ * 读取外部观察日志（最新 N 条）。
+ */
+export function readExternalObservations(workDir: string, limit = 50): Array<{
+  ts: string
+  userId: string
+  name: string
+  message: string
+  chatId: string
+}> {
+  const file = join(workDir, OBSERVATIONS_FILE)
+  if (!existsSync(file)) return []
+  try {
+    const lines = readFileSync(file, 'utf-8').trim().split('\n').filter(Boolean)
+    const tail = lines.slice(-limit)
+    return tail.map(l => JSON.parse(l))
+  } catch {
+    return []
+  }
 }
 
 /**

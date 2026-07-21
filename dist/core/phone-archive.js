@@ -58,11 +58,20 @@ export async function archiveConversation(opts) {
         }
         writeFileSync(join(dir, '消息.md'), msgText + '\n', 'utf-8');
         writeFileSync(join(dir, '回复.md'), reply + '\n', 'utf-8');
+        // 用户元数据（仅当有 userId 时写入，用于交互关联）
+        if (opts.userId) {
+            const meta = { userId: opts.userId, ts: new Date().toISOString() };
+            if (opts.channel)
+                meta.channel = opts.channel;
+            if (opts.profile)
+                meta.profile = opts.profile;
+            writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n', 'utf-8');
+        }
         // 分类：completed（已终端完成）vs task-pending（需终端处理）vs reference（参考归档）
         const category = await classifyConversation(message, reply, opts.toolNames);
         const categoryLabel = category === 'task-pending' ? '待办' : category === 'completed' ? '已完成' : '归档';
         logger(`archive classify: ${category}, category=${categoryLabel}, tools=[${opts.toolNames.join(', ')}]`);
-        const result = { category, slug, dateStr, seq, dir };
+        const result = { category, slug, dateStr, seq, dir, userId: opts.userId };
         if (category === 'task-pending' || category === 'completed') {
             const taskId = `${dateStr}/${seq}-${slug}`;
             const summary = extractTaskSummary(message, reply, category);

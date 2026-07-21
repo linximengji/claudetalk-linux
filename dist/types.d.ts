@@ -360,6 +360,34 @@ export interface DiscordProfileConfig {
     /** 限定 Guild ID（可选，不填则响应所有 Guild） */
     GUILD_ID?: string;
 }
+/** 身份级别 */
+export type IdentityLevel = 'owner' | 'friend' | 'stranger' | 'banned';
+/** 用户注册表条目 */
+export interface IdentityEntry {
+    name: string;
+    level: IdentityLevel;
+    relation?: string;
+    description?: string;
+    unionId?: string;
+    openIds?: Record<string, string>;
+}
+/** Bot 级身份策略 */
+export interface IdentityPolicy {
+    /** 跳过身份检查，所有人可访问（trip bot 用） */
+    skipCheck?: boolean;
+    /** 遇到未注册用户时的行为 */
+    onUnknown?: 'allow' | 'block';
+    /** 允许服务的身份级别 */
+    allowedLevels?: IdentityLevel[];
+    /** 是否将身份信息注入到 Claude prompt（twin bot 用） */
+    injectIdentity?: boolean;
+}
+/** IdentityResolver 解析结果 */
+export interface IdentityResult {
+    level: IdentityLevel;
+    name: string;
+    description: string;
+}
 /** ClaudeTalk Profile 配置 */
 export interface ProfileConfig {
     /** 消息通道类型，必填 */

@@ -3,8 +3,10 @@
  *
  * Runs in peer-message mode: WS connection managed by the independent feishu-bridge process.
  */
+import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import os from 'os';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { registerChannel } from '../registry.js';
@@ -34,6 +36,9 @@ export class FeishuClient {
     peerPollTimer = null;
     _botInfoRetryTimer = null;
     processedPeerIds = new Map(); // id → processedAt
+    processedEventIds = new Map(); // event id → timestamp, for dedup cleanup timer
+    DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
+    _dedupCleanupTimer = null;
     _isBusy = false; // 正在处理消息，后续消息进排队提示
     botAppName = null;
     _lastConvGetter = null;
@@ -366,6 +371,63 @@ export class FeishuClient {
         });
         // 启动 peer-messages 轮询（从 feishu-bridge 接收转发的消息）
         this.startPeerMessagePolling();
+        // 定时清理 processedEventIds 过期条目，每小时执行一次
+        this._dedupCleanupTimer = setInterval(() => {
+            const now = Date.now();
+            for (const [id, ts] of this.processedEventIds) {
+                if (now - ts > this.DEDUP_TTL_MS) {
+                    this.processedEventIds.delete(id);
+                }
+            }
+        }, 3600_000);
+    }
+    /**
+     * 处理 gap 卡片的回复：rootId 匹配 twin_gap_state.json 中的未回答 gap
+     * 调用 digital-clone 的 ingestion，标记答，返回 true 表示已处理
+     * 同时 /twin 指令也由这里处理
+     */
+    tryHandleGapOrTwin(msg, api) {
+        const content = msg.content || '';
+        const trimmed = content.trim();
+        const profileName = this.config.profileName || '';
+        // 只有 twin profile 处理 gap
+        if (profileName !== 'twin')
+            return false;
+        const gapStatePath = path.join(os.homedir(), '.claude', 'twin_gap_state.json');
+        // Gap card reply：直接摄入记忆库，标记 answered，发确认消息
+        if (trimmed && msg.rootId && !trimmed.startsWith('/')) {
+            try {
+                if (!fs.existsSync(gapStatePath))
+                    return false;
+                const gs = JSON.parse(fs.readFileSync(gapStatePath, 'utf-8'));
+                const gaps = gs.gaps || [];
+                const match = gaps.find((g) => g.message_id === msg.rootId && !g.answered);
+                if (!match)
+                    return false;
+                match.answered = true;
+                match.answered_at = new Date().toISOString();
+                fs.writeFileSync(gapStatePath, JSON.stringify(gs, null, 2) + '\n', 'utf-8');
+                this.logger(`[directWS] gap answered, feeding to twin: rootId=${msg.rootId}`);
+                this.twinFeed(content, msg.rootId);
+                api.sendTextMessage(msg.chatId || msg.openId, '缺口已关闭，已记录', !!msg.chatId).catch(() => { });
+                return true;
+            }
+            catch { /* not a gap, fall through */ }
+        }
+        return false;
+    }
+    twinFeed(content, sourceRef) {
+        const python = spawn('python3', [
+            '-c',
+            `import sys
+sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
+from twin.ingestion import ingest_text
+ingest_text(source='twin_feed', content=sys.argv[1], source_ref=sys.argv[2], sensitivity='private')`,
+            content, sourceRef,
+        ], { stdio: 'ignore' });
+        python.on('error', (err) => {
+            this.logger(`[directWS] twin_feed spawn error: ${err.message}`);
+        });
     }
     /**
      * 直连模式：创建自己的 WebSocket 连接，不依赖 feishu-bridge
@@ -393,8 +455,16 @@ export class FeishuClient {
         const profileName = this.config.profileName || 'default';
         channel.on('message', (msg) => {
             const { messageId, chatId, chatType, content, mentionedBot, rawContentType } = msg;
-            this.logger(`[directWS] message: id=${messageId} chatId=${chatId} type=${chatType} mentionedBot=${mentionedBot}`);
+            this.logger(`[directWS] message: id=${messageId} chatId=${chatId} type=${chatType} mentionedBot=${mentionedBot} rawContentType=${rawContentType}`);
             if (!messageId || !chatId)
+                return;
+            // 图片消息直接忽略：trip bot 不处理图片，不下载、不保存、不传给 LLM
+            if (rawContentType === 'image') {
+                this.logger(`[directWS] image message silently dropped: id=${messageId}`);
+                return;
+            }
+            // Gap 回复 + /twin 指令拦截：不进入 peer-message 流程
+            if (this.tryHandleGapOrTwin(msg, this))
                 return;
             // 群聊过滤：非 directWS 模式（即通过 feishu-bridge 轮询）的文本需要 @bot
             // directWS 模式（trip/twin 等独立 bot）不要求 @，被拉到任何群都自动回复
@@ -427,7 +497,7 @@ export class FeishuClient {
                 from: senderName,
                 chatId,
                 messageId,
-                message: content || '',
+                message: (content || ''),
                 createdAt: Date.now(),
                 traceId: crypto.randomUUID().slice(0, 8),
                 isGroup,
@@ -617,6 +687,7 @@ export class FeishuClient {
                 toolNames: [],
                 workDir,
                 isGroup,
+                channel: 'feishu',
             });
             if (result.taskId && result.summary) {
                 writeTaskToIndex({
@@ -732,6 +803,13 @@ export class FeishuClient {
             if (this._botInfoRetryTimer) {
                 clearInterval(this._botInfoRetryTimer);
                 this._botInfoRetryTimer = null;
+            }
+        }
+        catch { /* 定时器清理失败为 no-op */ }
+        try {
+            if (this._dedupCleanupTimer) {
+                clearInterval(this._dedupCleanupTimer);
+                this._dedupCleanupTimer = null;
             }
         }
         catch { /* 定时器清理失败为 no-op */ }

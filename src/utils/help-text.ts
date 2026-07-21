@@ -15,10 +15,12 @@ const HELP_TWIN = [
   '数字分身 指令',
   '',
   '会话  /new   /restart',
+  '投喂  /twin <内容>  — 写入新记忆',
   '记忆  /status   /log',
   '帮助  /help',
   '',
   '我是你的数字分身，基于记忆库回答。',
+  '/twin <内容> 可将信息摄入记忆库。',
 ].join('\n')
 
 /** 旅游助理场景指令 */
@@ -65,9 +67,9 @@ export function buildOnlineNotification(workDir: string, profile?: string): stri
   ]
 
   if (profile === 'twin') {
-    lines.push('/new   /restart   /status   /help')
+    lines.push('/new   /restart   /twin <内容>   /status   /help')
     lines.push('')
-    lines.push('基于记忆库回答，仅主人可写入新记忆。')
+    lines.push('基于记忆库回答，/twin <内容> 可写入新记忆。')
   } else if (profile === 'trip') {
     lines.push('/new   /restart   /status   /help')
     lines.push('')

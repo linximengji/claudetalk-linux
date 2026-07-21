@@ -20,9 +20,10 @@ import { assessRisk, requiresApproval, riskLabel } from './core/permission.js'
 import { buildApprovalCard, registerApproval, nextRequestId, buildTaskConfirmCard, inferTaskType, inferTaskPriority } from './channels/feishu/approval-handler.js'
 import { exec, spawn, execSync } from 'child_process'
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, appendFileSync } from 'fs'
+import { IdentityResolver } from './core/identity.js'
 import { request as httpRequest } from 'http'
 import { join, resolve } from 'path'
-import type { Channel, ChannelMessageContext, ClaudeTalkConfig } from './types.js'
+import type { Channel, ChannelMessageContext, ClaudeTalkConfig, IdentityResult } from './types.js'
 
 // OpenTelemetry init — before any channel or HTTP activity
 import { NodeSDK } from "@opentelemetry/sdk-node";
@@ -152,6 +153,27 @@ function waitForTunnelGone(ms: number): Promise<boolean> {
       })
     }
     poll()
+  })
+}
+
+function twinFeedResponse(workDir: string, content: string, sourceRef: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('python3', [
+      '-c',
+      `import sys
+sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
+from twin.ingestion import ingest_text
+result = ingest_text(source='twin_reply', content=sys.argv[1], source_ref=sys.argv[2], sensitivity='private')
+print(result)`,
+      content, sourceRef,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = ''
+    child.stderr?.on('data', (d: Buffer) => { stderr += d.toString() })
+    child.on('exit', code => {
+      if (code === 0) resolve()
+      else reject(new Error(`twinFeedResponse exit ${code}: ${stderr.slice(0, 200)}`))
+    })
+    child.on('error', reject)
   })
 }
 
@@ -302,6 +324,17 @@ export async function startBot(options: StartBotOptions): Promise<void> {
   const logger = createLogger(channelType, profile)
 
   logger(`[startBot] Starting channel=${channelType}, workDir=${workDir}`)
+
+  // ── IdentityResolver（仅 feishu channel 需要 API 查 union_id） ──
+  const identityResolver = new IdentityResolver(workDir, async () => {
+    // 飞书 channel 有自己的 getAccessToken() 缓存，优先使用
+    const feishuChannel = channel as any
+    if (typeof feishuChannel.getAccessToken === 'function') {
+      return feishuChannel.getAccessToken()
+    }
+    // fallback：无 channel（理论上不会走到这里）
+    throw new Error('IdentityResolver: no feishu channel available for token')
+  })
 
   // ── Singleton check: refuse if another instance is running ──
   try {
@@ -516,6 +549,33 @@ export async function startBot(options: StartBotOptions): Promise<void> {
       return
     }
 
+    // ── /twin 指令（仅 twin profile） ──
+    if (profile === 'twin' && (command === '/twin' || command.startsWith('/twin '))) {
+      const twinContent = strippedMessage.slice(5).trim()
+      if (!twinContent || twinContent === 'help') {
+        const usage = [
+          '数字分身 指令',
+          '',
+          '会话  /new   /restart',
+          '投喂  /twin <内容>  — 写入新记忆',
+          '状态  /status   /log',
+          '帮助  /help',
+          '',
+          '我是你的数字分身，基于记忆库回答。',
+          '/twin <内容> 可将信息摄入记忆库。',
+        ].join('\n')
+        if (typeof (channel as any).sendMarkdownCard === 'function') {
+          await (channel as any).sendMarkdownCard(context.conversationId, usage, context.isGroup)
+        } else {
+          await channel.sendMessage(context.conversationId, usage, context.isGroup)
+        }
+        return
+      }
+      // /twin <content>：通过 processedMessage 注入明确指令，让 LLM 用 twin_feed 工具摄入内容
+      const callerInfo = process.env.__TWIN_CALLER ? JSON.parse(process.env.__TWIN_CALLER) : {}
+      context.processedMessage =
+        `[用户提交了以下内容用于摄入数字分身记忆库。请调twin_feed MCP工具将内容摄入记忆库，并给出简短确认回复。]\n${twinContent}`
+    }
 
     // ── /session 会话管理 ──
     if (isSessionCommand(command)) {
@@ -918,25 +978,16 @@ export async function startBot(options: StartBotOptions): Promise<void> {
 
         // Twin profile: non-streaming with MCP config split by user identity
         if (profile === 'twin') {
-          // Load user registry and look up caller identity
-          let callerLevel = 'stranger'
-          let callerName = '陌生人'
-          let callerDesc = '陌生人'
-          const usersPath = join(workDir, '.claudetalk', 'twin', 'users.json')
+          let identity: IdentityResult
           try {
-            if (existsSync(usersPath)) {
-              const users = JSON.parse(readFileSync(usersPath, 'utf-8'))
-              const userEntry = users[context.userId]
-              if (userEntry) {
-                callerLevel = userEntry.level
-                callerName = userEntry.name
-                callerDesc = userEntry.description
-              } else {
-                // Fallback: map default levels if user not registered
-                callerName = `用户(${context.userId.slice(0, 16)}...)`
-              }
-            }
-          } catch { /* best-effort */ }
+            identity = await identityResolver.resolve(context.userId, config!.feishu?.FEISHU_APP_ID || '')
+          } catch (resolveErr) {
+            logger(`[onMessage] identityResolver.resolve failed for twin: ${resolveErr}`)
+            identity = { level: 'stranger', name: '陌生人', description: '回退到陌生人级别' }
+          }
+          const callerLevel = identity.level
+          const callerName = identity.name
+          const callerDesc = identity.description
           const isOwner = callerLevel === 'owner'
           const callerInfo = JSON.stringify({ userId: context.userId, name: callerName, level: callerLevel, description: callerDesc })
           const mcpTag = isOwner ? 'rw' : 'ro'
@@ -955,6 +1006,11 @@ export async function startBot(options: StartBotOptions): Promise<void> {
           delete process.env.__TWIN_MCP_TAG
           delete process.env.__TWIN_CALLER
           logger(`[onMessage] Claude reply (first 200 chars): "${finalResult.substring(0, 200)}"`)
+          // 将分身自己的回答也摄入记忆，保持对话连续性
+          if (isOwner && !context.isGroup) {
+            twinFeedResponse(workDir, finalResult, `twin_reply_${context.conversationId}`).catch(e =>
+              logger(`[onMessage] twinFeedResponse error: ${e}`))
+          }
           _lastConvPair.set(context.conversationId, { message, reply: finalResult })
           const nrResult = await archiveConversation({
             message, reply: finalResult,

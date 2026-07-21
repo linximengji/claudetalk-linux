@@ -4,7 +4,7 @@
  */
 
 import { spawn, ChildProcess } from 'child_process'
-import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import { appendFileSync, existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import type { ChannelType, ClaudeTalkConfig } from '../types.js'
 import { createLogger, log } from './logger.js'
@@ -377,9 +377,30 @@ function buildAgentJson(profileName: string, config: ClaudeTalkConfig, workDir: 
   }
 }
 
+/**
+ * 文件轮转：将 filePath 重命名为 filePath.1，旧文件依次后移，最多保留 maxKept 份。
+ */
+function rotateFileSync(filePath: string, maxKept: number, _dir: string, _baseName: string): void {
+  // 删除最旧的备份
+  try { renameSync(`${filePath}.${maxKept}`, `${filePath}.${maxKept + 1}`) } catch { /* not exists */ }
+  for (let i = maxKept - 1; i >= 1; i--) {
+    try { renameSync(`${filePath}.${i}`, `${filePath}.${i + 1}`) } catch { /* skip */ }
+  }
+  try { renameSync(filePath, `${filePath}.1`) } catch { /* skip */ }
+}
+
 function appendTokenLog(workDir: string, data: Record<string, unknown>) {
   try {
-    appendFileSync(join(workDir, '.claudetalk', 'token_usage.jsonl'), JSON.stringify(data) + '\n', 'utf-8')
+    const filePath = join(workDir, '.claudetalk', 'token_usage.jsonl')
+    // 达到 ~10MB 时轮转
+    try {
+      const stat = statSync(filePath)
+      if (stat.size > 10 * 1024 * 1024) {
+        const dir = join(workDir, '.claudetalk')
+        rotateFileSync(filePath, 5, dir, 'token_usage')
+      }
+    } catch { /* file doesn't exist yet, fine */ }
+    appendFileSync(filePath, JSON.stringify(data) + '\n', 'utf-8')
   } catch { /* token 日志写入失败不影响主功能 */ }
 }
 
@@ -447,11 +468,11 @@ const CLAUDE_TIMEOUT_MS = 240_000
 const STREAM_IDLE_TIMEOUT_MS = 60_000
 
 // 自动压缩的 input token 阈值，超过此值时在响应后异步触发 /compact
-const ASYNC_COMPACT_THRESHOLD = 200_000
+const ASYNC_COMPACT_THRESHOLD = 400_000
 // 同步压缩阈值：超过此值时在请求前同步等待 /compact 完成
-const SYNC_COMPACT_THRESHOLD = 400_000
+const SYNC_COMPACT_THRESHOLD = 600_000
 // 自动 summarize+reset 阈值：超过此值时清空 session 并保留摘要
-const RESET_THRESHOLD = 600_000
+const RESET_THRESHOLD = 800_000
 
 // 按 sessionKey 存储正在进行的压缩 Promise，用于防止并发操作同一 session
 const compactingPromises = new Map<string, Promise<void>>()
@@ -532,8 +553,9 @@ async function compactSession(
             if (existingEntry && !wasClearedDuringProcessing(sessionKey, sessionId)) {
               existingEntry.sessionId = response.session_id
               existingEntry.needsCompact = false
+              existingEntry.cumulatedInputTokens = Math.floor((existingEntry.cumulatedInputTokens ?? 0) * 0.5)
               saveSessionMap(workDir, sessionMap)
-              logger(`[compact] Compact done, resume session_id: ${response.session_id}`)
+              logger(`[compact] Compact done, resume session_id: ${response.session_id}, cumulated reduced to ${existingEntry.cumulatedInputTokens}`)
             } else if (existingEntry) {
               logger(`[compact] Session was cleared during compaction, not saving new session_id`)
             }
@@ -1033,10 +1055,10 @@ async function _execClaude(options: CallClaudeOptions, retryCount = 0): Promise<
         const cumulatedAfter = (newEntry?.cumulatedInputTokens ?? 0)
         if (
           response.session_id
-          && inputTokens > ASYNC_COMPACT_THRESHOLD
+          && cumulatedAfter > ASYNC_COMPACT_THRESHOLD
           && cumulatedAfter < SYNC_COMPACT_THRESHOLD
         ) {
-          logger(`[compact] input_tokens (${inputTokens}) exceeded ${ASYNC_COMPACT_THRESHOLD}, cumulated=${cumulatedAfter}, triggering async compact`)
+          logger(`[compact] cumulated_tokens (${cumulatedAfter}) exceeded ${ASYNC_COMPACT_THRESHOLD}, triggering async compact`)
           // 构建压缩用的 args（复用当前 args，但确保含 --resume）
           const compactArgs = ['-p', '--output-format', 'json', '--dangerously-skip-permissions', '--resume', response.session_id]
           if (profile && currentSubagentEnabled && currentConfig) {
@@ -1284,6 +1306,26 @@ async function _execClaudeStreaming(
                 lastReply: finalResult.slice(0, 500),
               })
               saveSessionMap(workDir, sessionMap)
+
+              // 响应后异步触发压缩（仅当小于 sync compact 阈值且 session id 有效）
+              const cumulatedAfter = prevCumulated + streamInputTokens
+              if (
+                newStreamSessionId
+                && cumulatedAfter > ASYNC_COMPACT_THRESHOLD
+                && cumulatedAfter < SYNC_COMPACT_THRESHOLD
+              ) {
+                logger(`[compact-stream] cumulated_tokens (${cumulatedAfter}) exceeded ${ASYNC_COMPACT_THRESHOLD}, triggering async compact`)
+                const compactArgs = ['-p', '--output-format', 'json', '--dangerously-skip-permissions', '--resume', newStreamSessionId]
+                if (profile && currentSubagentEnabled && currentConfig) {
+                  const agentJson = buildAgentJson(profile, currentConfig, workDir)
+                  if (agentJson) compactArgs.splice(1, 0, '--agents', agentJson)
+                }
+                const compactPromise = compactSession(sessionKey, newStreamSessionId, workDir, profile, compactArgs)
+                  .finally(() => {
+                    compactingPromises.delete(sessionKey)
+                  })
+                compactingPromises.set(sessionKey, compactPromise)
+              }
               } else {
                 logger(`[claude-stream] Session was cleared by user during processing, not saving old session_id`)
               }

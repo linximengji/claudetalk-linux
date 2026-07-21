@@ -576,9 +576,10 @@ describe('handleSessionCommand with channelType', () => {
   })
 
   it('/session name works with channelType', async () => {
-    // First create a session
+    // First create a session (must match the key that handleName will compute:
+    // getSessionKey(conversationId, workDir, profile, channelType, userId, isGroup))
     const { getSessionKey: realGetSessionKey, getSessionMap, saveSessionMap: realSaveSessionMap } = await import('../src/core/claude.js')
-    const sessionKey = realGetSessionKey('conv-naming', workDir, 'profileA', 'dingtalk')
+    const sessionKey = realGetSessionKey('conv-naming', workDir, 'profileA', 'dingtalk', 'user-1', false)
     const map = getSessionMap(workDir)
     map.set(sessionKey, {
       sessionId: 'sess-test-001',

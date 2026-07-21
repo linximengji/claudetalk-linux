@@ -26,6 +26,9 @@ export declare class FeishuClient implements Channel {
     private peerPollTimer;
     private _botInfoRetryTimer;
     private processedPeerIds;
+    private processedEventIds;
+    private readonly DEDUP_TTL_MS;
+    private _dedupCleanupTimer;
     private _isBusy;
     private botAppName;
     private _lastConvGetter;
@@ -82,6 +85,13 @@ export declare class FeishuClient implements Channel {
      * claudetalk only polls peer-message files.
      */
     start(): Promise<void>;
+    /**
+     * 处理 gap 卡片的回复：rootId 匹配 twin_gap_state.json 中的未回答 gap
+     * 调用 digital-clone 的 ingestion，标记答，返回 true 表示已处理
+     * 同时 /twin 指令也由这里处理
+     */
+    private tryHandleGapOrTwin;
+    private twinFeed;
     /**
      * 直连模式：创建自己的 WebSocket 连接，不依赖 feishu-bridge
      * trip bot 等独立 bot 使用自己的 appId/appSecret 建立 WS 长连接
