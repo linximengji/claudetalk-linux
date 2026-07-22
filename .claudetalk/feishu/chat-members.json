@@ -52,6 +52,38 @@
       "type": "bot",
       "openId": "ou_c9777ab3403b46ba5af02e5a87e37c57",
       "appId": "cli_aad19954aa385d11"
+    },
+    {
+      "name": "trip agent",
+      "type": "bot",
+      "openId": "ou_0ccf688f512a1ed098c2c7bae2bf2fba",
+      "appId": "cli_aad0ac29fdf91bd5"
+    },
+    {
+      "name": "claude code",
+      "type": "bot",
+      "openId": "ou_30b0945025fcfe9bbda426671f750e2b",
+      "appId": "cli_aa838f41f9f8dbe7"
+    }
+  ],
+  "oc_ee7eb9a9fb92bf86ba5ff682ac32d042": [
+    {
+      "name": "CC",
+      "type": "user",
+      "openId": "ou_2d49fc00a33a40c3b5755d58c469e09e",
+      "unionId": "on_e77b9eeda4a43666c2bfca4b24a33b61"
+    },
+    {
+      "name": "claude code",
+      "type": "bot",
+      "openId": "ou_30b0945025fcfe9bbda426671f750e2b",
+      "appId": "cli_aa838f41f9f8dbe7"
+    },
+    {
+      "name": "数字分身",
+      "type": "bot",
+      "openId": "ou_c9777ab3403b46ba5af02e5a87e37c57",
+      "appId": "cli_aad19954aa385d11"
     }
   ]
 }

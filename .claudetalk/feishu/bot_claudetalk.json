@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "id": "7fa457c1-f322-4c5b-9583-d6d6f3753756",
+    "from": "claude code",
+    "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
+    "messageId": "om_x100b69398a440ca0b21069b8cca4a15",
+    "message": "我现在不是每天推送三次吗？现在你这个给的推送表是不是不太正确？",
+    "createdAt": 1784732746400,
+    "traceId": "b54318ed",
+    "isGroup": true
+  }
+]

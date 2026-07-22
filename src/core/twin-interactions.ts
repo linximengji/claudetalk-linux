@@ -15,6 +15,44 @@ export interface InteractionEntry {
   msgCount: number
 }
 
+export interface ConversationEntry {
+  ts: string
+  userId: string
+  name: string
+  level: string
+  conversationId: string
+  message: string
+  reply: string
+  caller: 'owner' | 'external'
+}
+
+const CONVERSATIONS_FILE = '.claudetalk/twin/conversations.jsonl'
+
+/**
+ * 记录一次完整的对话（用户消息 + 分身回复）到 conversations.jsonl（append-only）。
+ * 用于后续追溯分析 bot 行为。
+ */
+export function logConversation(opts: {
+  workDir: string
+  userId: string
+  name: string
+  level: string
+  conversationId: string
+  message: string
+  reply: string
+  caller: 'owner' | 'external'
+}): void {
+  try {
+    const { workDir, ...rest } = opts
+    const dir = join(workDir, '.claudetalk', 'twin')
+    if (!existsSync(dir)) return
+    const entry: ConversationEntry = { ts: new Date().toISOString(), ...rest }
+    appendFileSync(join(workDir, CONVERSATIONS_FILE), JSON.stringify(entry) + '\n', 'utf-8')
+  } catch (err) {
+    logger(`logConversation error: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 /**
  * 记录一次交互到 interactions.jsonl（append-only）。
  */

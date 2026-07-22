@@ -1,8 +1,8 @@
 {
   "type": "process.exit",
-  "ts": "2026-07-21T14:53:28.105Z",
-  "pid": 956413,
-  "uptime_s": 32105,
+  "ts": "2026-07-22T13:42:30.736Z",
+  "pid": 1888940,
+  "uptime_s": 30540,
   "startup_phases": [
     "initLogFile",
     "loadConfig",
@@ -23,5 +23,5 @@
     "sigterm"
   ],
   "code": 0,
-  "stack": "    at drainThenExit (file:///home/ubuntu/projects/claudetalk/dist/index.js:423:17)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)"
+  "stack": "    at drainThenExit (file:///home/ubuntu/projects/claudetalk/dist/index.js:479:17)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)"
 }

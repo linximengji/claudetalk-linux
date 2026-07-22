@@ -8,7 +8,7 @@ import { HELP_TEXT } from './utils/index.js';
 import { isCloudflaredAlive, getCloudflaredPath } from './core/proc.js';
 import { summarizeStep } from './core/step-summarizer.js';
 import { archiveConversation, writeTaskToIndex } from './core/phone-archive.js';
-import { logInteraction } from './core/twin-interactions.js';
+import { logInteraction, logConversation } from './core/twin-interactions.js';
 import { getPhoneTasksDir, OPS_DAEMON_DIR } from './core/paths.js';
 import { closeLogFile, initLogFile } from './core/logger.js';
 import { stopMcpServer } from './mcp-server.js';
@@ -16,7 +16,7 @@ import { handleSessionCommand } from './commands/session.js';
 import { handleTaskCommand } from './commands/task.js';
 import { assessRisk, requiresApproval, riskLabel } from './core/permission.js';
 import { buildApprovalCard, registerApproval, nextRequestId, buildTaskConfirmCard, inferTaskType, inferTaskPriority } from './channels/feishu/approval-handler.js';
-import { exec, execSync } from 'child_process';
+import { exec, spawn, execSync } from 'child_process';
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, appendFileSync } from 'fs';
 import { IdentityResolver } from './core/identity.js';
 import { request as httpRequest } from 'http';
@@ -152,6 +152,123 @@ function waitForTunnelGone(ms) {
             });
         };
         poll();
+    });
+}
+function twinFeedResponse(workDir, content, sourceRef) {
+    return new Promise((resolve, reject) => {
+        const child = spawn('python3', [
+            '-c',
+            `import sys
+sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
+from twin.ingestion import ingest_text
+result = ingest_text(source='twin_reply', content=sys.argv[1], source_ref=sys.argv[2], sensitivity='private')
+print(result)`,
+            content, sourceRef,
+        ], { stdio: ['ignore', 'pipe', 'pipe'] });
+        let stderr = '';
+        child.stderr?.on('data', (d) => { stderr += d.toString(); });
+        child.on('exit', code => {
+            if (code === 0)
+                resolve();
+            else
+                reject(new Error(`twinFeedResponse exit ${code}: ${stderr.slice(0, 200)}`));
+        });
+        child.on('error', reject);
+    });
+}
+/** Call twin_chat via direct Python spawn, bypassing Claude API. */
+function callTwinChat(query, caller, context) {
+    return new Promise((resolve, reject) => {
+        const child = spawn('python3', [
+            '-c',
+            `import sys, json
+sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
+from twin.tools import handle_twin_chat
+result = handle_twin_chat(query=sys.argv[1], caller=sys.argv[2], mode='normal', context=sys.argv[3] if sys.argv[3] else None)
+print(result)`,
+            query, caller, context || '',
+        ], { stdio: ['ignore', 'pipe', 'pipe'] });
+        let stdout = '';
+        let stderr = '';
+        child.stdout?.on('data', (d) => { stdout += d.toString(); });
+        child.stderr?.on('data', (d) => { stderr += d.toString(); });
+        child.on('exit', code => {
+            if (code === 0) {
+                try {
+                    const parsed = JSON.parse(stdout.trim());
+                    resolve(parsed.answer ?? parsed.response ?? stdout.trim());
+                }
+                catch {
+                    resolve(stdout.trim());
+                }
+            }
+            else {
+                console.error(`[callTwinChat] exit ${code}: ${stderr.slice(0, 200)}`);
+                reject(new Error(`callTwinChat exit ${code}`));
+            }
+        });
+        child.on('error', reject);
+    });
+}
+/**
+ * 检查 conversations.jsonl 是否积攒了足够新轮数（相比上次反思），
+ * 如果满 10 轮则异步触发反思进程（fire-and-forget）。
+ */
+async function triggerReflectionIfNeeded(workDir) {
+    const convFile = join(workDir, '.claudetalk', 'twin', 'conversations.jsonl');
+    if (!existsSync(convFile))
+        return;
+    const lines = readFileSync(convFile, 'utf-8').trim().split('\n').filter(Boolean);
+    if (lines.length === 0)
+        return;
+    // 上一次反思时记录的总轮数 → 写在与 conversations.jsonl 同目录的 checkpoint 文件
+    const checkpointFile = join(workDir, '.claudetalk', 'twin', '.reflection_checkpoint');
+    let lastCount = 0;
+    if (existsSync(checkpointFile)) {
+        try {
+            lastCount = parseInt(readFileSync(checkpointFile, 'utf-8').trim(), 10) || 0;
+        }
+        catch { /* ignore */ }
+    }
+    const newRounds = lines.length - lastCount;
+    if (newRounds < 10)
+        return;
+    // 触发反思（异步子进程）
+    console.log(`[reflection] ${newRounds} new rounds detected, triggering...`);
+    // 先写 checkpoint（避免并发重复触发）
+    writeFileSync(checkpointFile, String(lines.length), 'utf-8');
+    return new Promise((resolve) => {
+        const child = spawn('python3', [
+            '-c',
+            `import sys, json
+sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
+from twin.reflection import run_reflection
+result = run_reflection(force=True)
+print(json.dumps(result, ensure_ascii=False))
+`,
+        ], { stdio: ['ignore', 'pipe', 'pipe'] });
+        let stdout = '';
+        child.stdout?.on('data', (d) => { stdout += d.toString(); });
+        child.stderr?.on('data', (d) => { console.error(`[reflection] stderr: ${d.toString().slice(0, 200)}`); });
+        child.on('exit', (code) => {
+            if (code === 0) {
+                try {
+                    const r = JSON.parse(stdout.trim());
+                    console.log(`[reflection] done: ${JSON.stringify(r.stored || r.error || 'ok')}`);
+                }
+                catch {
+                    console.log(`[reflection] done: ${stdout.slice(0, 200)}`);
+                }
+            }
+            else {
+                console.error(`[reflection] exit ${code}`);
+            }
+            resolve();
+        });
+        child.on('error', (err) => {
+            console.error(`[reflection] spawn error: ${err.message}`);
+            resolve();
+        });
     });
 }
 // HELP_TEXT imported from utils/help-text.ts
@@ -511,22 +628,12 @@ export async function startBot(options) {
         if (profile === 'twin' && (command === '/twin' || command.startsWith('/twin '))) {
             const twinContent = strippedMessage.slice(5).trim();
             if (!twinContent || twinContent === 'help') {
-                const usage = [
-                    '数字分身 指令',
-                    '',
-                    '会话  /new   /restart',
-                    '投喂  /twin <内容>  — 写入新记忆',
-                    '状态  /status   /log',
-                    '帮助  /help',
-                    '',
-                    '我是你的数字分身，基于记忆库回答。',
-                    '/twin <内容> 可将信息摄入记忆库。',
-                ].join('\n');
+                const helpText = HELP_TEXT('twin');
                 if (typeof channel.sendMarkdownCard === 'function') {
-                    await channel.sendMarkdownCard(context.conversationId, usage, context.isGroup);
+                    await channel.sendMarkdownCard(context.conversationId, helpText, context.isGroup);
                 }
                 else {
-                    await channel.sendMessage(context.conversationId, usage, context.isGroup);
+                    await channel.sendMessage(context.conversationId, helpText, context.isGroup);
                 }
                 return;
             }
@@ -926,7 +1033,7 @@ export async function startBot(options) {
                         }
                     }
                 };
-                // Twin profile: non-streaming with MCP config split by user identity
+                // Twin profile: direct call to twin_chat MCP tool (bypasses Claude API)
                 if (profile === 'twin') {
                     let identity;
                     try {
@@ -941,22 +1048,57 @@ export async function startBot(options) {
                     const callerDesc = identity.description;
                     const isOwner = callerLevel === 'owner';
                     const callerInfo = JSON.stringify({ userId: context.userId, name: callerName, level: callerLevel, description: callerDesc });
-                    const mcpTag = isOwner ? 'rw' : 'ro';
-                    process.env.__TWIN_MCP_TAG = mcpTag;
                     process.env.__TWIN_CALLER = callerInfo;
-                    const finalResult = await callClaude({
-                        message,
-                        conversationId: context.conversationId,
-                        workDir,
-                        isGroup: context.isGroup,
-                        userId: context.userId,
-                        profile,
-                        channel: channelType,
-                        processedMessage: context.processedMessage,
-                    });
-                    delete process.env.__TWIN_MCP_TAG;
+                    const caller = isOwner ? 'owner' : 'external';
+                    let finalResult;
+                    try {
+                        // Build conversation context from recent history (last 3 rounds)
+                        let chatContext;
+                        try {
+                            const convFile = join(workDir, '.claudetalk', 'twin', 'conversations.jsonl');
+                            if (existsSync(convFile)) {
+                                const lines = readFileSync(convFile, 'utf-8').trim().split('\n').filter(Boolean);
+                                const tail = lines.slice(-6);
+                                const parts = [];
+                                for (const line of tail) {
+                                    try {
+                                        const e = JSON.parse(line);
+                                        if (e.conversationId === context.conversationId) {
+                                            parts.push(`用户: ${e.message}`);
+                                            parts.push(`你: ${e.reply}`);
+                                        }
+                                    }
+                                    catch { /* skip */ }
+                                }
+                                if (parts.length > 0) {
+                                    chatContext = parts.slice(-6).join('\n');
+                                }
+                            }
+                        }
+                        catch { /* ignore context read error */ }
+                        finalResult = await callTwinChat(context.processedMessage ?? message, caller, chatContext);
+                    }
+                    catch (chatErr) {
+                        logger(`[onMessage] callTwinChat failed: ${chatErr}`);
+                        // Fallback: use Claude API
+                        finalResult = await callClaude({
+                            message,
+                            conversationId: context.conversationId,
+                            workDir,
+                            isGroup: context.isGroup,
+                            userId: context.userId,
+                            profile,
+                            channel: channelType,
+                            processedMessage: context.processedMessage,
+                        });
+                    }
                     delete process.env.__TWIN_CALLER;
                     logger(`[onMessage] Claude reply (first 200 chars): "${finalResult.substring(0, 200)}"`);
+                    // 将用户消息和分身回答同时摄入记忆，保持对话连续性
+                    if (isOwner && !context.isGroup) {
+                        twinFeedResponse(workDir, message, `twin_user_msg_${context.conversationId}`).catch(e => logger(`[onMessage] twinFeedResponse(user_msg) error: ${e}`));
+                        twinFeedResponse(workDir, finalResult, `twin_reply_${context.conversationId}`).catch(e => logger(`[onMessage] twinFeedResponse(reply) error: ${e}`));
+                    }
                     _lastConvPair.set(context.conversationId, { message, reply: finalResult });
                     const nrResult = await archiveConversation({
                         message, reply: finalResult,
@@ -969,6 +1111,16 @@ export async function startBot(options) {
                         name: callerName, level: callerLevel,
                         channel: channelType, profile,
                     });
+                    // 记录对话内容到 conversations.jsonl（用于问题追溯）
+                    logConversation({
+                        workDir, userId: context.userId,
+                        name: callerName, level: callerLevel,
+                        conversationId: context.conversationId,
+                        message, reply: finalResult,
+                        caller,
+                    });
+                    // 每积攒足够轮数触发反思（异步，不阻塞回复）
+                    triggerReflectionIfNeeded(workDir).catch(e => console.error(`[reflection] trigger error: ${e}`));
                     if (nrResult.category === 'task-pending' && typeof channel.sendCard === 'function') {
                         const cardBody = buildTaskConfirmCard({
                             summary: nrResult.summary || message.slice(0, 50),

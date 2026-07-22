@@ -2,7 +2,7 @@
 const HELP_DEFAULT = [
     'ClaudeTalk 指令',
     '',
-    '会话  /new   /session   /restart',
+    '会话  /new   /session',
     '任务  /tasks   /task run/status/cancel',
     '状态  /status   /log',
     '远程  开启/关闭远程',
@@ -13,9 +13,9 @@ const HELP_DEFAULT = [
 const HELP_TWIN = [
     '数字分身 指令',
     '',
-    '会话  /new   /restart',
+    '会话  /new',
     '投喂  /twin <内容>  — 写入新记忆',
-    '记忆  /status   /log',
+    '状态  /status   /log',
     '帮助  /help',
     '',
     '我是你的数字分身，基于记忆库回答。',
@@ -25,7 +25,7 @@ const HELP_TWIN = [
 const HELP_TRIP = [
     '旅游助理 指令',
     '',
-    '会话  /new   /restart',
+    '会话  /new',
     '景点  搜索附近景点 / 景点详情',
     '路线  路线规划 / 交通建议',
     '天气  目的地天气',
@@ -59,17 +59,17 @@ export function buildOnlineNotification(workDir, profile) {
         '',
     ];
     if (profile === 'twin') {
-        lines.push('/new   /restart   /twin <内容>   /status   /help');
+        lines.push('/new   /twin <内容>   /status   /help');
         lines.push('');
         lines.push('基于记忆库回答，/twin <内容> 可写入新记忆。');
     }
     else if (profile === 'trip') {
-        lines.push('/new   /restart   /status   /help');
+        lines.push('/new   /status   /help');
         lines.push('');
         lines.push('景点 · 路线 · 天气 · 行程 · 出发！');
     }
     else {
-        lines.push('/new   /restart   /status   /help');
+        lines.push('/new   /status   /help');
         lines.push('');
         lines.push('远程  term.linximengji.com');
     }
