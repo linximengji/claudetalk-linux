@@ -160,18 +160,31 @@ function twinFeedResponse(workDir: string, content: string, sourceRef: string): 
   return new Promise((resolve, reject) => {
     const child = spawn('python3', [
       '-c',
-      `import sys
-sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
-from twin.ingestion import ingest_text
-result = ingest_text(source='twin_reply', content=sys.argv[1], source_ref=sys.argv[2], sensitivity='private')
-print(result)`,
+      'import sys, json\n'
+      + "sys.path.insert(0, '/home/ubuntu/projects/digital-clone')\n"
+      + 'from twin.gap_detector import ingest_twin_message\n'
+      + 'result = ingest_twin_message(content=sys.argv[1], source_ref=sys.argv[2])\n'
+      + 'print(json.dumps(result, ensure_ascii=False))',
       content, sourceRef,
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = ''
     let stderr = ''
+    child.stdout?.on('data', (d: Buffer) => { stdout += d.toString() })
     child.stderr?.on('data', (d: Buffer) => { stderr += d.toString() })
     child.on('exit', code => {
-      if (code === 0) resolve()
-      else reject(new Error(`twinFeedResponse exit ${code}: ${stderr.slice(0, 200)}`))
+      if (code === 0) {
+        if (stdout) {
+          try {
+            const r = JSON.parse(stdout.trim().split('\n').pop() || '{}')
+            if (r.skipped === 'no_stance') {
+              console.log('[twinFeedResponse] gap skipped: ' + (r.gap_dimension || '?'))
+            } else if (r.gap_matched) {
+              console.log('[twinFeedResponse] gap answered: ' + (r.gap_dimension || '?'))
+            }
+          } catch { /* ignore parse error */ }
+        }
+        resolve()
+      } else reject(new Error('twinFeedResponse exit ' + code + ': ' + stderr.slice(0, 200)))
     })
     child.on('error', reject)
   })
@@ -233,44 +246,63 @@ async function triggerReflectionIfNeeded(workDir: string): Promise<void> {
   const newRounds = lines.length - lastCount
   if (newRounds < 10) return
 
-  // 触发反思（异步子进程）
-  console.log(`[reflection] ${newRounds} new rounds detected, triggering...`)
+  // 触发反思（异步子进程），成功后写入 checkpoint，失败时回滚
+  const MAX_RETRIES = 2
+  let attempt = 0
+  while (attempt <= MAX_RETRIES) {
+    attempt++
+    console.log(`[reflection] ${newRounds} new rounds detected, triggering... (attempt ${attempt})`)
 
-  // 先写 checkpoint（避免并发重复触发）
-  writeFileSync(checkpointFile, String(lines.length), 'utf-8')
-
-  return new Promise<void>((resolve) => {
-    const child = spawn('python3', [
-      '-c',
-      `import sys, json
+    const ok = await new Promise<boolean>((resolve) => {
+      const child = spawn('python3', [
+        '-c',
+        `import sys, json
 sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
 from twin.reflection import run_reflection
 result = run_reflection(force=True)
 print(json.dumps(result, ensure_ascii=False))
 `,
-    ], { stdio: ['ignore', 'pipe', 'pipe'] })
+      ], { stdio: ['ignore', 'pipe', 'pipe'] })
 
-    let stdout = ''
-    child.stdout?.on('data', (d: Buffer) => { stdout += d.toString() })
-    child.stderr?.on('data', (d: Buffer) => { console.error(`[reflection] stderr: ${d.toString().slice(0, 200)}`) })
-    child.on('exit', (code) => {
-      if (code === 0) {
-        try {
-          const r = JSON.parse(stdout.trim())
-          console.log(`[reflection] done: ${JSON.stringify(r.stored || r.error || 'ok')}`)
-        } catch {
-          console.log(`[reflection] done: ${stdout.slice(0, 200)}`)
+      let stdout = ''
+      child.stdout?.on('data', (d: Buffer) => { stdout += d.toString() })
+      child.stderr?.on('data', (d: Buffer) => { console.error(`[reflection] stderr: ${d.toString().slice(0, 200)}`) })
+      child.on('exit', (code) => {
+        if (code === 0) {
+          try {
+            const parsed = JSON.parse(stdout.trim())
+            if (parsed.error) {
+              console.error(`[reflection] error: ${parsed.error}`)
+              resolve(false)
+            } else {
+              console.log(`[reflection] done: ${JSON.stringify(parsed.stored || 'ok')}`)
+              resolve(true)
+            }
+          } catch {
+            console.log(`[reflection] done: ${stdout.slice(0, 200)}`)
+            resolve(true)
+          }
+        } else {
+          console.error(`[reflection] exit ${code}`)
+          resolve(false)
         }
-      } else {
-        console.error(`[reflection] exit ${code}`)
-      }
-      resolve()
+      })
+      child.on('error', (err) => {
+        console.error(`[reflection] spawn error: ${err.message}`)
+        resolve(false)
+      })
     })
-    child.on('error', (err) => {
-      console.error(`[reflection] spawn error: ${err.message}`)
-      resolve()
-    })
-  })
+
+    if (ok) {
+      // 子进程成功后写入 checkpoint
+      writeFileSync(checkpointFile, String(lines.length), 'utf-8')
+      return
+    }
+    // 失败：不写 checkpoint，重试
+    if (attempt > MAX_RETRIES) {
+      console.error(`[reflection] failed after ${MAX_RETRIES} attempts, checkpoint NOT advanced`)
+    }
+  }
 }
 
 // HELP_TEXT imported from utils/help-text.ts
