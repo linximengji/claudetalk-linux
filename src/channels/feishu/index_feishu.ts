@@ -506,7 +506,7 @@ export class FeishuClient implements Channel {
 
     const gapStatePath = path.join(os.homedir(), '.claude', 'twin_gap_state.json');
 
-    // Gap card reply：直接摄入记忆库，标记 answered，发确认消息
+    // Gap card reply：先触发摄入，成功后标记 answered
     if (trimmed && msg.rootId && !trimmed.startsWith('/')) {
       try {
         if (!fs.existsSync(gapStatePath)) return false;
@@ -515,13 +515,34 @@ export class FeishuClient implements Channel {
         const match = gaps.find((g: any) => g.message_id === msg.rootId && !g.answered);
         if (!match) return false;
 
-        match.answered = true;
-        match.answered_at = new Date().toISOString();
-        fs.writeFileSync(gapStatePath, JSON.stringify(gs, null, 2) + '\n', 'utf-8');
-        this.logger(`[directWS] gap answered, feeding to twin: rootId=${msg.rootId}`);
+        this.logger(`[directWS] gap rootId=${msg.rootId} matched, starting twinFeed`);
 
-        this.twinFeed(content, msg.rootId);
-        api.sendTextMessage(msg.chatId || msg.openId, '缺口已关闭，已记录', !!msg.chatId).catch(() => {});
+        // 异步执行摄入，不阻塞消息处理
+        this.twinFeed(content, msg.rootId, {
+          onSuccess: (ingestionResult: string) => {
+            try {
+              // 摄入成功后才标记 answered + 发确认
+              const reloaded = JSON.parse(fs.readFileSync(gapStatePath, 'utf-8'));
+              const gap = reloaded.gaps?.find((g: any) => g.message_id === msg.rootId && !g.answered);
+              if (gap) {
+                gap.answered = true;
+                gap.answered_at = new Date().toISOString();
+                fs.writeFileSync(gapStatePath, JSON.stringify(reloaded, null, 2) + '\n', 'utf-8');
+                this.logger(`[directWS] gap answered and ingested: rootId=${msg.rootId}`);
+              }
+              const memoSummary = (() => {
+                try { const p = JSON.parse(ingestionResult); return `✓ ${p.stored}条记忆(${(p.types || []).join(',')})${p.anchor ? ', 锚定' : ''}`; } catch { return '缺口已关闭，已记录'; }
+              })();
+              api.sendTextMessage(msg.chatId || msg.openId, memoSummary, !!msg.chatId).catch(() => {});
+            } catch (e: any) {
+              this.logger(`[directWS] gap marking error: ${e.message}`);
+            }
+          },
+          onError: (errMsg: string) => {
+            this.logger(`[directWS] twinFeed failed for gap rootId=${msg.rootId}: ${errMsg}`);
+            api.sendTextMessage(msg.chatId || msg.openId, `缺口关闭失败：${errMsg}，请稍后重试`, !!msg.chatId).catch(() => {});
+          },
+        });
         return true;
       } catch { /* not a gap, fall through */ }
     }
@@ -529,17 +550,47 @@ export class FeishuClient implements Channel {
     return false;
   }
 
-  private twinFeed(content: string, sourceRef: string): void {
+  private twinFeed(content: string, sourceRef: string, callbacks?: { onSuccess?: (result: string) => void; onError?: (err: string) => void }): void {
     const python = spawn('python3', [
       '-c',
-      `import sys
+      `import sys,json
 sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
 from twin.ingestion import ingest_text
-ingest_text(source='twin_feed', content=sys.argv[1], source_ref=sys.argv[2], sensitivity='private')`,
+try:
+    result = ingest_text(source='twin_feed', content=sys.argv[1], source_ref=sys.argv[2], sensitivity='private')
+    if isinstance(result, dict):
+        print("INGEST_OK:" + json.dumps(result))
+    else:
+        print("INGEST_OK:" + str(result))
+except Exception as e:
+    print("INGEST_ERR:" + str(e), file=sys.stderr)`,
       content, sourceRef,
-    ], { stdio: 'ignore' });
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    let stderr = '';
+    let stdout = '';
+
+    python.stdout?.on('data', (data: Buffer) => {
+      stdout += data.toString();
+    });
+    python.stderr?.on('data', (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    python.on('close', (code) => {
+      if (code === 0 && stdout.includes('INGEST_OK:')) {
+        const ingestionResult = stdout.replace('INGEST_OK:', '').trim();
+        this.logger(`[directWS] twinFeed OK: sourceRef=${sourceRef}, result=${ingestionResult}`);
+        callbacks?.onSuccess?.(ingestionResult);
+      } else {
+        const errMsg = stderr.trim() || `exit code=${code}`;
+        this.logger(`[directWS] twinFeed FAILED: sourceRef=${sourceRef}, ${errMsg}`);
+        callbacks?.onError?.(errMsg);
+      }
+    });
     python.on('error', (err) => {
-      this.logger(`[directWS] twin_feed spawn error: ${err.message}`);
+      this.logger(`[directWS] twinFeed spawn error: ${err.message}`);
+      callbacks?.onError?.(err.message);
     });
   }
 

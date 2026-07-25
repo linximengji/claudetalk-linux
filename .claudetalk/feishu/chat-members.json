@@ -58,26 +58,14 @@
       "type": "bot",
       "openId": "ou_0ccf688f512a1ed098c2c7bae2bf2fba",
       "appId": "cli_aad0ac29fdf91bd5"
-    },
-    {
-      "name": "claude code",
-      "type": "bot",
-      "openId": "ou_30b0945025fcfe9bbda426671f750e2b",
-      "appId": "cli_aa838f41f9f8dbe7"
     }
   ],
-  "oc_ee7eb9a9fb92bf86ba5ff682ac32d042": [
+  "oc_d1891a6d3afd0337009e23c90c37a0f7": [
     {
       "name": "CC",
       "type": "user",
-      "openId": "ou_2d49fc00a33a40c3b5755d58c469e09e",
+      "openId": "ou_f19c3f5115838fd3dbf9f4bf577d1efb",
       "unionId": "on_e77b9eeda4a43666c2bfca4b24a33b61"
-    },
-    {
-      "name": "claude code",
-      "type": "bot",
-      "openId": "ou_30b0945025fcfe9bbda426671f750e2b",
-      "appId": "cli_aa838f41f9f8dbe7"
     },
     {
       "name": "数字分身",

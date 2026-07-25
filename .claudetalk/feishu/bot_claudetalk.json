@@ -1,12 +1,12 @@
 [
   {
-    "id": "7e95ce4f-20b7-4dd8-8bc1-31e8be30834b",
+    "id": "f1d1d8d2-a6ea-4ca4-abd3-48eb2b501e49",
     "from": "claude code",
     "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
-    "messageId": "om_x100b6917796780a0b25d961a706b6a7",
-    "message": "我在想一个问题，就是， moderate和complex的判定标准是什么？",
-    "createdAt": 1784820604195,
-    "traceId": "1835992f",
+    "messageId": "om_x100b6975b02d58a4b178869959809ac",
+    "message": "Token plane现在支持qwen-max-preview你帮我把qwen3.7的设定替代成新的。替代完成后测试一下输出",
+    "createdAt": 1784946673625,
+    "traceId": "4dc7ec8e",
     "isGroup": true
   }
 ]
