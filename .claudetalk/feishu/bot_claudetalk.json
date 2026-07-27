@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "id": "ee662e30-2b8b-484d-97c3-d6016fcd31b1",
+    "from": "claude code",
+    "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
+    "messageId": "om_x100b695908cdac80b1814890c10ce6e",
+    "message": "为什么工具审核显示MCP状态未知",
+    "createdAt": 1785123938753,
+    "traceId": "6e788c82",
+    "isGroup": true
+  }
+]
