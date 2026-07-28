@@ -1200,13 +1200,10 @@ async function _execClaudeStreaming(
 
     child.stderr.on('data', (data: Buffer) => {
       stderr += data.toString()
-      // Claude CLI writes parse errors to stderr when the proxy returns
-      // malformed streaming chunks. Kill early instead of waiting for idle
-      // timeout, then fall back to non-streaming mode on retry.
-      if (stderr.includes('Could not parse message')) {
-        logger(`[claude-stream] JSON parse error detected in stderr, killing early for fallback`)
-        try { child.kill('SIGTERM') } catch { /* ignore */ }
-      }
+      // "Could not parse message" is a harmless warning from claude CLI's internal
+      // stream parser encountering SSE event: lines. claude CLI still outputs the
+      // correct result JSON on stdout — killing early produces exit 143 (SIGTERM)
+      // unnecessarily. Only idle timeout is treated as fatal.
     })
     child.stdout.on("data", (data: Buffer) => {
       _resetIdleTimer()

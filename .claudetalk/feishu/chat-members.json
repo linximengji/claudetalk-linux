@@ -58,6 +58,12 @@
       "type": "bot",
       "openId": "ou_0ccf688f512a1ed098c2c7bae2bf2fba",
       "appId": "cli_aad0ac29fdf91bd5"
+    },
+    {
+      "name": "claude code",
+      "type": "bot",
+      "openId": "ou_30b0945025fcfe9bbda426671f750e2b",
+      "appId": "cli_aa838f41f9f8dbe7"
     }
   ],
   "oc_d1891a6d3afd0337009e23c90c37a0f7": [
@@ -72,6 +78,12 @@
       "type": "bot",
       "openId": "ou_c9777ab3403b46ba5af02e5a87e37c57",
       "appId": "cli_aad19954aa385d11"
+    },
+    {
+      "name": "claude code",
+      "type": "bot",
+      "openId": "ou_30b0945025fcfe9bbda426671f750e2b",
+      "appId": "cli_aa838f41f9f8dbe7"
     }
   ]
 }
