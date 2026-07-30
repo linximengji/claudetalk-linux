@@ -53,16 +53,16 @@
     "needsCompact": false
   },
   "oc_44ba0d81afa9189a67ef99d0bce1124d\u0000/home/ubuntu/projects/claudetalk\u0000default\u0000feishu": {
-    "sessionId": "f2ec05e3-6d02-4a5d-878f-0ae75c8330e9",
-    "lastActiveAt": 1785250769307,
+    "sessionId": "93596c3c-7733-46f3-9899-40d048a8e2b6",
+    "lastActiveAt": 1785416997758,
     "isGroup": true,
     "conversationId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
     "userId": "claude code",
     "subagentEnabled": false,
     "channel": "feishu",
-    "cumulatedInputTokens": 785874,
-    "toolCallCount": 71,
-    "lastMessage": "测试一下好不好用。",
-    "lastReply": "3. `memory_code_query type=consumer` — 查调用方\n\n4. 正常运行 `scan()` 一次，看看扫描后 freshness 是否变 `fresh`"
+    "cumulatedInputTokens": 132611,
+    "toolCallCount": 14,
+    "lastMessage": "你这两个变更都有问题， QWEN3.7已经停用了，我现在全面转向了QWEN3.8。",
+    "lastReply": "修好了。`qwen3.7-max` → `qwen3.8-max-preview`。"
   }
 }

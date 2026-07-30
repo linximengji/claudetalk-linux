@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "id": "4b8fbf3f-64f0-45dc-947c-ab06fc97ffbf",
+    "from": "claude code",
+    "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
+    "messageId": "om_x100b69809ef100a0b3b5b30946d8dea",
+    "message": "你这两个变更都有问题， QWEN3.7已经停用了，我现在全面转向了QWEN3.8。",
+    "createdAt": 1785416965467,
+    "traceId": "53ad0e05",
+    "isGroup": true
+  }
+]

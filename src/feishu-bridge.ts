@@ -17,7 +17,7 @@ import { request as httpRequest } from 'http'
 import { randomUUID } from 'crypto'
 import { createLarkChannel } from '@larksuite/channel'
 import type { NormalizedMessage, CardActionEvent, LarkChannel } from '@larksuite/channel'
-import { FEISHU_API_BASE, loadFeishuConfig, SUPPORTED_MSG_TYPES, FeishuApiClient } from './feishu-shared/index.js'
+import { FEISHU_API_BASE, loadFeishuConfig, SUPPORTED_MSG_TYPES, FeishuApiClient, parseFeishuMessage } from './feishu-shared/index.js'
 
 // LoggerLevel enum from @larksuiteoapi/node-sdk (re-exported via channel's dependency chain)
 // 0=fatal, 1=error, 2=warn, 3=info, 4=debug, 5=trace
@@ -640,10 +640,30 @@ async function pollMessages(api: FeishuApiClient, claudeTalkDir: string, chatIds
         continue
       }
 
-      const messageText = extractMessageText(item)
-      if (!messageText.trim()) {
-        seen.add(msgId)
-        continue
+      let messageText: string
+      const msgType = item.msg_type as string
+
+      // Image messages: download via parseFeishuMessage and embed local path
+      if (msgType === 'image') {
+        try {
+          const rawContent = typeof item.body?.content === 'string'
+            ? item.body.content
+            : JSON.stringify(item.body?.content || {})
+          const parsed = await parseFeishuMessage(msgType, rawContent, msgId, FEISHU_API_BASE, WORK_DIR, token)
+          if (parsed.imagePaths.length > 0) {
+            messageText = parsed.imagePaths.map(p => `[图片: ${p}]`).join('\n')
+          } else {
+            messageText = '[图片]'
+          }
+        } catch {
+          messageText = '[图片]'
+        }
+      } else {
+        messageText = extractMessageText(item)
+        if (!messageText.trim()) {
+          seen.add(msgId)
+          continue
+        }
       }
 
       // Group chat: only forward messages that @mention the bot

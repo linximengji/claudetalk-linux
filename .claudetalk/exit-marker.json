@@ -1,8 +1,8 @@
 {
   "type": "unhandledRejection",
-  "ts": "2026-07-28T02:15:44.223Z",
+  "ts": "2026-07-30T12:19:36.087Z",
   "pid": 2624123,
-  "uptime_s": 35347,
+  "uptime_s": 244379,
   "startup_phases": [
     "initLogFile",
     "loadConfig",
@@ -21,6 +21,6 @@
     "heartbeat",
     "heartbeat"
   ],
-  "detail": "claude exited with code 143. stderr: (empty)",
-  "stack": "Error: claude exited with code 143. stderr: (empty)\n    at ChildProcess.<anonymous> (file:///home/ubuntu/projects/claudetalk/dist/core/claude.js:1183:24)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)\n    at Process.callbackTrampoline (node:internal/async_hooks:130:17)"
+  "detail": "claude exited with code 1. stderr: (empty)",
+  "stack": "Error: claude exited with code 1. stderr: (empty)\n    at ChildProcess.<anonymous> (file:///home/ubuntu/projects/claudetalk/dist/core/claude.js:1183:24)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)\n    at Process.callbackTrampoline (node:internal/async_hooks:130:17)"
 }

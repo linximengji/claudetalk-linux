@@ -84,6 +84,12 @@
       "type": "bot",
       "openId": "ou_30b0945025fcfe9bbda426671f750e2b",
       "appId": "cli_aa838f41f9f8dbe7"
+    },
+    {
+      "name": "trip agent",
+      "type": "bot",
+      "openId": "ou_0ccf688f512a1ed098c2c7bae2bf2fba",
+      "appId": "cli_aad0ac29fdf91bd5"
     }
   ]
 }
