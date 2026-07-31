@@ -351,7 +351,7 @@ const MAX_RETRY_COUNT = 2;
 // claude 进程最大等待时间（ms），超过此时间未响应视为挂起
 const CLAUDE_TIMEOUT_MS = 240_000;
 // 流式模式下，连续 N ms 无任何 stdout 输出则超时
-const STREAM_IDLE_TIMEOUT_MS = 60_000;
+const STREAM_IDLE_TIMEOUT_MS = 240_000;
 // 自动压缩的 input token 阈值，超过此值时在响应后异步触发 /compact
 const ASYNC_COMPACT_THRESHOLD = 400_000;
 // 同步压缩阈值：超过此值时在请求前同步等待 /compact 完成

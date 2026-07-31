@@ -93,6 +93,10 @@ export declare class FeishuClient implements Channel {
     private tryHandleGapOrTwin;
     private twinFeed;
     /**
+     * 判断是否在回复末尾引导一个缺口问题。异步，不阻塞主回复。
+     */
+    private shouldAskGap;
+    /**
      * 直连模式：创建自己的 WebSocket 连接，不依赖 feishu-bridge
      * trip bot 等独立 bot 使用自己的 appId/appSecret 建立 WS 长连接
      */

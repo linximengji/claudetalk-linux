@@ -18,7 +18,8 @@ import { archiveConversation, writeTaskToIndex } from '../../core/phone-archive.
 import { handleApprovalCallback } from './approval-handler.js';
 import { loadPeerMessages, removePeerMessages, appendPeerMessage, } from './peer-message.js';
 import { ChatMemberStore, ChatMemberResolver, } from './chat-members.js';
-import { FEISHU_API_BASE } from '../../feishu-shared/index.js';
+import { FeishuApiClient, FEISHU_API_BASE } from '../../feishu-shared/index.js';
+import { downloadImage } from './resources.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 /**
@@ -421,13 +422,21 @@ export class FeishuClient {
                             const memoSummary = (() => {
                                 try {
                                     const p = JSON.parse(ingestionResult);
-                                    return `✓ ${p.stored}条记忆(${(p.types || []).join(',')})${p.anchor ? ', 锚定' : ''}`;
+                                    if (p.ingestion)
+                                        return '✓ 记忆已记录';
+                                    return `✓ ${p.stored || '?'}条记忆`;
                                 }
                                 catch {
                                     return '缺口已关闭，已记录';
                                 }
                             })();
                             api.sendTextMessage(msg.chatId || msg.openId, memoSummary, !!msg.chatId).catch(() => { });
+                            // 顺带检查是否需要引导缺口问题
+                            this.shouldAskGap(content).then(r => {
+                                if (r?.should_ask && r?.question) {
+                                    api.sendTextMessage(msg.chatId || msg.openId, r.question, !!msg.chatId).catch(() => { });
+                                }
+                            }).catch(() => { });
                         }
                         catch (e) {
                             this.logger(`[directWS] gap marking error: ${e.message}`);
@@ -445,13 +454,14 @@ export class FeishuClient {
         return false;
     }
     twinFeed(content, sourceRef, callbacks) {
+        const TIMEOUT_MS = 60_000;
         const python = spawn('python3', [
             '-c',
             `import sys,json
 sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
-from twin.ingestion import ingest_text
+from twin.gap_detector import ingest_twin_message
 try:
-    result = ingest_text(source='twin_feed', content=sys.argv[1], source_ref=sys.argv[2], sensitivity='private')
+    result = ingest_twin_message(content=sys.argv[1], source_ref=sys.argv[2])
     if isinstance(result, dict):
         print("INGEST_OK:" + json.dumps(result))
     else:
@@ -462,6 +472,25 @@ except Exception as e:
         ], { stdio: ['ignore', 'pipe', 'pipe'] });
         let stderr = '';
         let stdout = '';
+        let settled = false;
+        const done = (err) => {
+            if (settled)
+                return;
+            settled = true;
+            if (err) {
+                this.logger(`[directWS] twinFeed FAILED: sourceRef=${sourceRef}, ${err}`);
+                callbacks?.onError?.(err);
+            }
+            else {
+                const ingestionResult = stdout.replace('INGEST_OK:', '').trim();
+                this.logger(`[directWS] twinFeed OK: sourceRef=${sourceRef}, result=${ingestionResult}`);
+                callbacks?.onSuccess?.(ingestionResult);
+            }
+        };
+        const timer = setTimeout(() => {
+            python.kill('SIGKILL');
+            done(`timeout ${TIMEOUT_MS}ms`);
+        }, TIMEOUT_MS);
         python.stdout?.on('data', (data) => {
             stdout += data.toString();
         });
@@ -469,20 +498,59 @@ except Exception as e:
             stderr += data.toString();
         });
         python.on('close', (code) => {
+            clearTimeout(timer);
+            if (settled)
+                return;
             if (code === 0 && stdout.includes('INGEST_OK:')) {
-                const ingestionResult = stdout.replace('INGEST_OK:', '').trim();
-                this.logger(`[directWS] twinFeed OK: sourceRef=${sourceRef}, result=${ingestionResult}`);
-                callbacks?.onSuccess?.(ingestionResult);
+                // only mark answered if memories were actually created
+                const result = stdout.replace('INGEST_OK:', '').trim();
+                try {
+                    const parsed = JSON.parse(result);
+                    if (parsed.skipped === 'no_stance' || (parsed.ingestion?.status === 'noop')) {
+                        done('gap reply had no substantive content — gap stays pending');
+                        return;
+                    }
+                }
+                catch { /* legacy string format, accept as-is */ }
+                done();
             }
             else {
-                const errMsg = stderr.trim() || `exit code=${code}`;
-                this.logger(`[directWS] twinFeed FAILED: sourceRef=${sourceRef}, ${errMsg}`);
-                callbacks?.onError?.(errMsg);
+                done(stderr.trim() || `exit code=${code}`);
             }
         });
         python.on('error', (err) => {
-            this.logger(`[directWS] twinFeed spawn error: ${err.message}`);
-            callbacks?.onError?.(err.message);
+            clearTimeout(timer);
+            done(err.message);
+        });
+    }
+    /**
+     * 判断是否在回复末尾引导一个缺口问题。异步，不阻塞主回复。
+     */
+    shouldAskGap(userMessage) {
+        return new Promise((resolve) => {
+            const python = spawn('python3', [
+                '-c',
+                `import sys,json
+sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
+from twin.gap_detector import should_ask_gap
+try:
+    r = should_ask_gap(sys.argv[1])
+    print(json.dumps(r))
+except Exception as e:
+    print('{}')`,
+                userMessage,
+            ], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+            let out = '';
+            python.stdout?.on('data', (d) => { out += d.toString(); });
+            python.on('close', () => {
+                try {
+                    resolve(JSON.parse(out));
+                }
+                catch {
+                    resolve({});
+                }
+            });
+            python.on('error', () => resolve({}));
         });
     }
     /**
@@ -514,9 +582,58 @@ except Exception as e:
             this.logger(`[directWS] message: id=${messageId} chatId=${chatId} type=${chatType} mentionedBot=${mentionedBot} rawContentType=${rawContentType}`);
             if (!messageId || !chatId)
                 return;
-            // 图片消息直接忽略：trip bot 不处理图片，不下载、不保存、不传给 LLM
+            // senderName 需要提前解析，图片消息也会用到
+            const senderOpenId = msg.senderId || '';
+            const senderName = (() => {
+                if (!senderOpenId)
+                    return profileName;
+                const members = this.chatMemberStore.getMembers(chatId);
+                const existing = members.find(m => m.openId === senderOpenId);
+                return existing ? existing.name : profileName;
+            })();
+            // 图片消息：trip bot 丢弃，twin bot 下载嵌入 peer message
             if (rawContentType === 'image') {
-                this.logger(`[directWS] image message silently dropped: id=${messageId}`);
+                if (profileName !== 'twin') {
+                    this.logger(`[directWS] image message silently dropped: id=${messageId}`);
+                    return;
+                }
+                // twin: 异步下载图片，完成后更新 peer message
+                this.logger(`[directWS] twin image: downloading id=${messageId}`);
+                const imgContent = content ? (typeof content === 'string' ? content : JSON.stringify(content)) : JSON.stringify({});
+                this.getAccessToken().then(token => {
+                    const parsed = JSON.parse(imgContent);
+                    if (parsed.image_key) {
+                        downloadImage(parsed.image_key, messageId, FEISHU_API_BASE, this.claudetalkDir, token)
+                            .then(localPath => {
+                            if (localPath) {
+                                this.logger(`[directWS] twin image downloaded: ${localPath}`);
+                                // 更新已写入的 peer message（追加图片路径）
+                                const botName = this.botAppName || profileName;
+                                const msgs = loadPeerMessages(this.claudetalkDir, botName);
+                                const idx = msgs.findIndex((m) => m.messageId === messageId);
+                                if (idx >= 0) {
+                                    msgs[idx].message = `[图片: ${localPath}]`;
+                                    const msgPath = path.join(this.claudetalkDir, 'feishu', `bot_${botName}.json`);
+                                    fs.writeFileSync(msgPath, JSON.stringify(msgs, null, 2) + '\n', 'utf-8');
+                                }
+                            }
+                        }).catch(() => { });
+                    }
+                }).catch(() => { });
+                // 先写占位 peer message
+                const dummyPeerMsg = {
+                    id: crypto.randomUUID(),
+                    from: senderName,
+                    chatId,
+                    messageId,
+                    message: '[图片]',
+                    createdAt: Date.now(),
+                    traceId: crypto.randomUUID().slice(0, 8),
+                    isGroup: chatType === 'group' || (chatType !== 'p2p' && chatId.startsWith('oc_')),
+                    senderOpenId: msg.senderId || '',
+                };
+                const botName = this.botAppName || profileName;
+                appendPeerMessage(this.claudetalkDir, botName, dummyPeerMsg);
                 return;
             }
             // Gap 回复 + /twin 指令拦截：不进入 peer-message 流程
@@ -532,16 +649,6 @@ except Exception as e:
                     return;
                 }
             }
-            const senderOpenId = msg.senderId || '';
-            const senderName = (() => {
-                if (!senderOpenId)
-                    return profileName;
-                // 阻塞式的同步 resolve 太重，但 directWS 的 on('message') 是 callback，不用 await
-                // 改为在写 peer message 时异步 resolve，写入 from 字段取已知用户名兜底
-                const members = this.chatMemberStore.getMembers(chatId);
-                const existing = members.find(m => m.openId === senderOpenId);
-                return existing ? existing.name : profileName;
-            })();
             // 异步解析成员信息（写缓存），不阻塞消息投递
             if (senderOpenId && senderOpenId !== this.botOpenId) {
                 this.chatMemberResolver.resolve(senderOpenId, chatId).then(name => {
@@ -887,20 +994,37 @@ except Exception as e:
         const imgMatch = content.match(/\[图片:\s*(.+?)\]|!\[.*?\]\((.+?)\)/);
         const imgPath = imgMatch?.[1] || imgMatch?.[2];
         if (imgPath && fs.existsSync(imgPath)) {
-            try {
-                const resp = await fetch(`${this.bridgeUrl}/send-media`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filePath: imgPath, chatId: conversationId, msgType: 'image' }),
-                });
-                const data = await resp.json();
-                if (data.ok) {
-                    this.logger(`[feishu] sent image to ${conversationId}: ${imgPath}`);
-                    return data.image_key || '';
+            if (this.config.directWS) {
+                // directWS 模式（twin/trip）：没有 bridge，走 FeishuApiClient 上传+发送
+                try {
+                    const api = new FeishuApiClient(this.config.appId, this.config.appSecret);
+                    const imageKey = await api.uploadImage(imgPath);
+                    const receiveIdType = isGroup ? 'chat_id' : 'open_id';
+                    await api.sendImage(conversationId, imageKey, receiveIdType);
+                    this.logger(`[feishu] sent image via API to ${conversationId}: ${imgPath}`);
+                    return imageKey;
+                }
+                catch (err) {
+                    this.logger(`[feishu] send image via API failed: ${err}`);
                 }
             }
-            catch (err) {
-                this.logger(`[feishu] send image via bridge failed: ${err}`);
+            else {
+                // bridge 模式（主 bot）：走 feishu-bridge /send-media
+                try {
+                    const resp = await fetch(`${this.bridgeUrl}/send-media`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filePath: imgPath, chatId: conversationId, msgType: 'image' }),
+                    });
+                    const data = await resp.json();
+                    if (data.ok) {
+                        this.logger(`[feishu] sent image to ${conversationId}: ${imgPath}`);
+                        return data.image_key || '';
+                    }
+                }
+                catch (err) {
+                    this.logger(`[feishu] send image via bridge failed: ${err}`);
+                }
             }
         }
         const response = await this.sendTextMessage(conversationId, content, isGroup);
