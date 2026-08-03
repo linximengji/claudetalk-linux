@@ -224,6 +224,60 @@ print(result)`,
 }
 
 /**
+ * 流式调用 twin_chat：spawn Python 逐行读 NDJSON 事件（thought_delta/answer_delta/done）。
+ * 返回最终 answer 文本；onEvent 回调每收到一个事件就触发（供飞书流式推送）。
+ */
+function callTwinChatStream(
+  query: string,
+  caller: 'owner' | 'external',
+  context: string | undefined,
+  onEvent: (evt: { type: string; text?: string; answer?: string; thought?: string }) => void,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('python3', [
+      '-c',
+      `import sys
+sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
+from twin.tools import handle_twin_chat_stream
+def main():
+    for line in handle_twin_chat_stream(query=sys.argv[1], caller=sys.argv[2], context=sys.argv[3] if sys.argv[3] else None, mode='normal'):
+        print(line, end='', flush=True)
+main()`,
+      query, caller, context || '',
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let finalAnswer = ''
+    let stderr = ''
+    let buffer = ''
+    child.stdout?.on('data', (d: Buffer) => {
+      buffer += d.toString()
+      let idx: number
+      while ((idx = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, idx).trim()
+        buffer = buffer.slice(idx + 1)
+        if (!line) continue
+        try {
+          const evt = JSON.parse(line)
+          if (evt.type === 'done') {
+            finalAnswer = evt.answer || ''
+          }
+          onEvent(evt)
+        } catch { /* skip corrupt line */ }
+      }
+    })
+    child.stderr?.on('data', (d: Buffer) => { stderr += d.toString() })
+    child.on('exit', code => {
+      if (code === 0) {
+        resolve(finalAnswer)
+      } else {
+        console.error(`[callTwinChatStream] exit ${code}: ${stderr.slice(0, 300)}`)
+        reject(new Error(`callTwinChatStream exit ${code}: ${stderr.slice(0, 200)}`))
+      }
+    })
+    child.on('error', reject)
+  })
+}
+
+/**
  * 检查 conversations.jsonl 是否积攒了足够新轮数（相比上次反思），
  * 如果满 10 轮则异步触发反思进程（fire-and-forget）。
  */
@@ -1110,47 +1164,68 @@ export async function startBot(options: StartBotOptions): Promise<void> {
           const callerInfo = JSON.stringify({ userId: context.userId, name: callerName, level: callerLevel, description: callerDesc })
           process.env.__TWIN_CALLER = callerInfo
           const caller = isOwner ? 'owner' : 'external'
+          // 思考过程开关：true=总是展示，false=总不展示，null/未配置=按身份默认（主人展示、外部不展示）
+          const _cfgShow = (config as any)?.twin?.showThinking
+          const showThinking = (_cfgShow === undefined || _cfgShow === null) ? isOwner : !!_cfgShow
 
           let finalResult: string
+          let finalThought = ''
+          // Build conversation context from recent history (last 3 rounds)
+          let chatContext: string | undefined
           try {
-            // Build conversation context from recent history (last 3 rounds)
-            let chatContext: string | undefined
-            try {
-              const convFile = join(workDir, '.claudetalk', 'twin', 'conversations.jsonl')
-              if (existsSync(convFile)) {
-                const lines = readFileSync(convFile, 'utf-8').trim().split('\n').filter(Boolean)
-                const tail = lines.slice(-6)
-                const parts: string[] = []
-                for (const line of tail) {
-                  try {
-                    const e = JSON.parse(line)
-                    if (e.conversationId === context.conversationId) {
-                      parts.push(`用户: ${e.message}`)
-                      parts.push(`你: ${e.reply}`)
-                    }
-                  } catch { /* skip */ }
-                }
-                if (parts.length > 0) {
-                  chatContext = parts.slice(-6).join('\n')
-                }
+            const convFile = join(workDir, '.claudetalk', 'twin', 'conversations.jsonl')
+            if (existsSync(convFile)) {
+              const lines = readFileSync(convFile, 'utf-8').trim().split('\n').filter(Boolean)
+              const tail = lines.slice(-6)
+              const parts: string[] = []
+              for (const line of tail) {
+                try {
+                  const e = JSON.parse(line)
+                  if (e.conversationId === context.conversationId) {
+                    parts.push(`用户: ${e.message}`)
+                    parts.push(`你: ${e.reply}`)
+                  }
+                } catch { /* skip */ }
               }
-            } catch { /* ignore context read error */ }
-            finalResult = await callTwinChat(context.processedMessage ?? message, caller, chatContext)
-          } catch (chatErr) {
-            logger(`[onMessage] callTwinChat failed: ${chatErr}`)
-            // Fallback: use Claude API
-            finalResult = await callClaude({
-              message,
-              conversationId: context.conversationId,
-              workDir,
-              isGroup: context.isGroup,
-              userId: context.userId,
-              profile,
-              channel: channelType,
-              processedMessage: context.processedMessage,
+              if (parts.length > 0) {
+                chatContext = parts.slice(-6).join('\n')
+              }
+            }
+          } catch { /* ignore context read error */ }
+          const pendingMsg = context.processedMessage ?? message
+          try {
+            // 流式：思考过程先露出，随后正式回答逐字推送
+            let thoughtBuf = ''
+            finalResult = await callTwinChatStream(pendingMsg, caller, chatContext, evt => {
+              if (evt.type === 'thought_delta') {
+                thoughtBuf += evt.text || ''
+                if (showThinking) {
+                  editStatus('🧠 思考中… ' + (evt.text || '').replace(/\s+/g, ' ').slice(-90)).catch(() => {})
+                }
+              } else if (evt.type === 'answer_delta') {
+                // 只滚动展示增量预览，避免与最终正式回复重复定格
+                editStatus('✍️ ' + (evt.text || '').replace(/\s+/g, ' ').slice(-90)).catch(() => {})
+              } else if (evt.type === 'done') {
+                thoughtBuf = evt.thought || thoughtBuf
+              }
             })
+            finalThought = thoughtBuf
+          } catch (chatErr) {
+            logger(`[onMessage] callTwinChatStream failed: ${chatErr}`)
+            // 降级：非流式 callTwinChat（干净 JSON → answer），绝不 fallback 到失控的 Claude API
+            try {
+              finalResult = await callTwinChat(pendingMsg, caller, chatContext)
+            } catch (err2) {
+              logger(`[onMessage] callTwinChat failed: ${err2}`)
+              finalResult = `分身暂时无法回复，请稍后再试。错误: ${err2 instanceof Error ? err2.message : String(err2)}`
+            }
           }
           delete process.env.__TWIN_CALLER
+          // 思考过程开关：仅对分身主人展示，对外（external）只发正式回答
+          if (showThinking && finalThought && !finalResult.includes(finalThought.slice(0, 20))) {
+            const thoughtLines = finalThought.split('\n').filter((l: string) => l.trim()).map((l: string) => `▸ ${l}`).join('\n')
+            finalResult = `${finalResult}\n\n———————— 以下是分身的思考过程（内部推理，感兴趣再看）————————\n${thoughtLines}`
+          }
           logger(`[onMessage] Claude reply (first 200 chars): "${finalResult.substring(0, 200)}"`)
           // 将用户消息和分身回答同时摄入记忆，保持对话连续性
           if (isOwner && !context.isGroup) {
