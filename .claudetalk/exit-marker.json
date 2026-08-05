@@ -1,8 +1,8 @@
 {
-  "type": "process.exit",
-  "ts": "2026-08-02T17:07:09.405Z",
-  "pid": 3958440,
-  "uptime_s": 810,
+  "type": "unhandledRejection",
+  "ts": "2026-08-03T18:18:32.436Z",
+  "pid": 1656281,
+  "uptime_s": 306396,
   "startup_phases": [
     "initLogFile",
     "loadConfig",
@@ -19,9 +19,8 @@
     "heartbeat",
     "heartbeat",
     "heartbeat",
-    "heartbeat",
-    "sigterm"
+    "heartbeat"
   ],
-  "code": 0,
-  "stack": "    at drainThenExit (file:///home/ubuntu/projects/claudetalk/dist/index.js:626:17)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)"
+  "detail": "claude exited with code 1. stderr: (empty)",
+  "stack": "Error: claude exited with code 1. stderr: (empty)\n    at ChildProcess.<anonymous> (file:///home/ubuntu/projects/claudetalk/dist/core/claude.js:1183:24)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)\n    at Process.callbackTrampoline (node:internal/async_hooks:130:17)"
 }
