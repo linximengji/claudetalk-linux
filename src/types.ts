@@ -399,13 +399,12 @@ export interface DiscordProfileConfig {
 /** 身份级别 */
 export type IdentityLevel = 'owner' | 'friend' | 'stranger' | 'banned'
 
-/** 用户注册表条目 */
+/** 用户注册表条目（顶层 key 为自增 uid，openIds 为各平台 ID → uid 的别名） */
 export interface IdentityEntry {
   name: string
   level: IdentityLevel
   relation?: string
   description?: string
-  unionId?: string
   openIds?: Record<string, string>
 }
 

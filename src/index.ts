@@ -163,9 +163,9 @@ function twinFeedResponse(workDir: string, content: string, sourceRef: string): 
       'import sys, json\n'
       + "sys.path.insert(0, '/home/ubuntu/projects/digital-clone')\n"
       + 'from twin.gap_detector import ingest_twin_message\n'
-      + 'result = ingest_twin_message(content=sys.argv[1], source_ref=sys.argv[2])\n'
+      + 'result = ingest_twin_message(content=sys.argv[1], source_ref=sys.argv[2], source=sys.argv[3])\n'
       + 'print(json.dumps(result, ensure_ascii=False))',
-      content, sourceRef,
+      content, sourceRef, 'twin_user',
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = ''
     let stderr = ''
@@ -193,14 +193,15 @@ function twinFeedResponse(workDir: string, content: string, sourceRef: string): 
 /** Call twin_chat via direct Python spawn, bypassing Claude API. */
 function callTwinChat(query: string, caller: 'owner' | 'external', context?: string): Promise<string> {
   return new Promise((resolve, reject) => {
+    const mode = detectProfileMode(query, caller)
     const child = spawn('python3', [
       '-c',
       `import sys, json
 sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
 from twin.tools import handle_twin_chat
-result = handle_twin_chat(query=sys.argv[1], caller=sys.argv[2], mode='normal', context=sys.argv[3] if sys.argv[3] else None)
+result = handle_twin_chat(query=sys.argv[1], caller=sys.argv[2], mode=sys.argv[4], context=sys.argv[3] if sys.argv[3] else None)
 print(result)`,
-      query, caller, context || '',
+      query, caller, context || '', mode,
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = ''
     let stderr = ''
@@ -227,6 +228,20 @@ print(result)`,
  * 流式调用 twin_chat：spawn Python 逐行读 NDJSON 事件（thought_delta/answer_delta/done）。
  * 返回最终 answer 文本；onEvent 回调每收到一个事件就触发（供飞书流式推送）。
  */
+/**
+ * 检测是否进入「画像总结模式」：仅 owner 问自己的决策逻辑/习惯/价值观/行为模式时触发。
+ * 这类宽泛问题按关键词 top-10 召回会漏，需走跨类型高置信召回。
+ */
+function detectProfileMode(query: string, caller: 'owner' | 'external'): 'profile' | 'normal' {
+  if (caller !== 'owner') return 'normal'
+  const q = query.toLowerCase()
+  const profilePhrases = [
+    '总结我的', '我的决策', '决策逻辑', '我的习惯', '行为模式', '我的价值观',
+    '我是怎么', '我的思维方式', '我的性格', '我是什么样的人', '分析我',
+  ]
+  return profilePhrases.some(p => q.includes(p)) ? 'profile' : 'normal'
+}
+
 function callTwinChatStream(
   query: string,
   caller: 'owner' | 'external',
@@ -234,16 +249,17 @@ function callTwinChatStream(
   onEvent: (evt: { type: string; text?: string; answer?: string; thought?: string }) => void,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    const mode = detectProfileMode(query, caller)
     const child = spawn('python3', [
       '-c',
       `import sys
 sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
 from twin.tools import handle_twin_chat_stream
 def main():
-    for line in handle_twin_chat_stream(query=sys.argv[1], caller=sys.argv[2], context=sys.argv[3] if sys.argv[3] else None, mode='normal'):
+    for line in handle_twin_chat_stream(query=sys.argv[1], caller=sys.argv[2], context=sys.argv[3] if sys.argv[3] else None, mode=sys.argv[4]):
         print(line, end='', flush=True)
 main()`,
-      query, caller, context || '',
+      query, caller, context || '', mode,
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
     let finalAnswer = ''
     let stderr = ''
@@ -507,16 +523,8 @@ export async function startBot(options: StartBotOptions): Promise<void> {
 
   logger(`[startBot] Starting channel=${channelType}, workDir=${workDir}`)
 
-  // ── IdentityResolver（仅 feishu channel 需要 API 查 union_id） ──
-  const identityResolver = new IdentityResolver(workDir, async () => {
-    // 飞书 channel 有自己的 getAccessToken() 缓存，优先使用
-    const feishuChannel = channel as any
-    if (typeof feishuChannel.getAccessToken === 'function') {
-      return feishuChannel.getAccessToken()
-    }
-    // fallback：无 channel（理论上不会走到这里）
-    throw new Error('IdentityResolver: no feishu channel available for token')
-  })
+  // ── IdentityResolver：纯本地用户表驱动，不再调飞书 API ──
+  const identityResolver = new IdentityResolver(workDir)
 
   // ── Singleton check: refuse if another instance is running ──
   try {
@@ -1227,12 +1235,10 @@ export async function startBot(options: StartBotOptions): Promise<void> {
             finalResult = `${finalResult}\n\n———————— 以下是分身的思考过程（内部推理，感兴趣再看）————————\n${thoughtLines}`
           }
           logger(`[onMessage] Claude reply (first 200 chars): "${finalResult.substring(0, 200)}"`)
-          // 将用户消息和分身回答同时摄入记忆，保持对话连续性
+          // 只将用户消息摄入记忆（分身自己的回答不作为主人画像依据）
           if (isOwner && !context.isGroup) {
-            twinFeedResponse(workDir, message, `twin_user_msg_${context.conversationId}`).catch(e =>
+            twinFeedResponse(workDir, message, `twin_user_${context.conversationId}`).catch(e =>
               logger(`[onMessage] twinFeedResponse(user_msg) error: ${e}`))
-            twinFeedResponse(workDir, finalResult, `twin_reply_${context.conversationId}`).catch(e =>
-              logger(`[onMessage] twinFeedResponse(reply) error: ${e}`))
           }
           _lastConvPair.set(context.conversationId, { message, reply: finalResult })
           const nrResult = await archiveConversation({

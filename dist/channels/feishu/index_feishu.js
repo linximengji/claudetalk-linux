@@ -385,7 +385,7 @@ export class FeishuClient {
     /**
      * 处理 gap 卡片的回复：rootId 匹配 twin_gap_state.json 中的未回答 gap
      * 调用 digital-clone 的 ingestion，标记答，返回 true 表示已处理
-     * 同时 /twin 指令也由这里处理
+     * （/twin 指令由 index.ts 的 processedMessage 处理，不在此路径）
      */
     tryHandleGapOrTwin(msg, api) {
         const content = msg.content || '';
@@ -461,14 +461,14 @@ export class FeishuClient {
 sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
 from twin.gap_detector import ingest_twin_message
 try:
-    result = ingest_twin_message(content=sys.argv[1], source_ref=sys.argv[2])
+    result = ingest_twin_message(content=sys.argv[1], source_ref=sys.argv[2], source=sys.argv[3])
     if isinstance(result, dict):
         print("INGEST_OK:" + json.dumps(result))
     else:
         print("INGEST_OK:" + str(result))
 except Exception as e:
     print("INGEST_ERR:" + str(e), file=sys.stderr)`,
-            content, sourceRef,
+            content, sourceRef, 'twin_gap',
         ], { stdio: ['ignore', 'pipe', 'pipe'] });
         let stderr = '';
         let stdout = '';
@@ -636,7 +636,7 @@ except Exception as e:
                 appendPeerMessage(this.claudetalkDir, botName, dummyPeerMsg);
                 return;
             }
-            // Gap 回复 + /twin 指令拦截：不进入 peer-message 流程
+            // Gap 回复拦截：不进入 peer-message 流程（/twin 指令由 index.ts 的 processedMessage 处理）
             if (this.tryHandleGapOrTwin(msg, this))
                 return;
             // 群聊过滤：非 directWS 模式（即通过 feishu-bridge 轮询）的文本需要 @bot

@@ -88,7 +88,7 @@ export declare class FeishuClient implements Channel {
     /**
      * 处理 gap 卡片的回复：rootId 匹配 twin_gap_state.json 中的未回答 gap
      * 调用 digital-clone 的 ingestion，标记答，返回 true 表示已处理
-     * 同时 /twin 指令也由这里处理
+     * （/twin 指令由 index.ts 的 processedMessage 处理，不在此路径）
      */
     private tryHandleGapOrTwin;
     private twinFeed;
