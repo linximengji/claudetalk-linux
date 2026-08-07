@@ -231,18 +231,25 @@ print(result)`,
  * 返回最终 answer 文本；onEvent 回调每收到一个事件就触发（供飞书流式推送）。
  */
 /**
- * 检测是否进入「画像总结模式」：仅 owner 问自己的决策逻辑/习惯/价值观/行为模式时触发。
- * 这类宽泛问题按关键词 top-10 召回会漏，需走跨类型高置信召回。
+ * 检测 twin 对话的定制模式：
+ * - "审视/核对" 意图 → review（分身挑待核对记忆，主人确认/纠正）
+ * - 其余画像总结意图 → profile（跨类型高置信召回总结）
+ * 仅 owner 触发。
  */
 function detectProfileMode(query, caller) {
     if (caller !== 'owner')
         return 'normal';
     const q = query.toLowerCase();
+    const reviewPhrases = ['自我审视', '审视一下', '审视', '核对一下', '核对记忆', '你确认一下', '查看我的记忆'];
     const profilePhrases = [
         '总结我的', '我的决策', '决策逻辑', '我的习惯', '行为模式', '我的价值观',
         '我是怎么', '我的思维方式', '我的性格', '我是什么样的人', '分析我',
     ];
-    return profilePhrases.some(p => q.includes(p)) ? 'profile' : 'normal';
+    if (reviewPhrases.some(p => q.includes(p)))
+        return 'review';
+    if (profilePhrases.some(p => q.includes(p)))
+        return 'profile';
+    return 'normal';
 }
 function callTwinChatStream(query, caller, context, onEvent) {
     return new Promise((resolve, reject) => {
