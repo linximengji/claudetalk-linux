@@ -352,6 +352,9 @@ const MAX_RETRY_COUNT = 2;
 const CLAUDE_TIMEOUT_MS = 240_000;
 // 流式模式下，连续 N ms 无任何 stdout 输出则超时
 const STREAM_IDLE_TIMEOUT_MS = 240_000;
+// 工具执行硬上限：最近一次 tool_use 之后，允许进程静默运行的最长时间。
+// 超出此时间仍未产生新事件，才真正视为卡死。
+const TOOL_EXECUTION_TIMEOUT_MS = 300_000;
 // 自动压缩的 input token 阈值，超过此值时在响应后异步触发 /compact
 const ASYNC_COMPACT_THRESHOLD = 400_000;
 // 同步压缩阈值：超过此值时在请求前同步等待 /compact 完成
@@ -951,12 +954,21 @@ async function _execClaudeStreaming(options, onEvent, retryCount = 0) {
             },
         });
         activeSubprocesses.add(child);
-        // Idle timeout: reset on every stdout data, only fires when nothing comes through
+        // Idle timeout: reset on every stdout data, only fires when nothing comes through.
+        // 判定不只盯 stdout 停顿：若最近一次 tool_use 尚未超过 TOOL_EXECUTION_TIMEOUT_MS，
+        // 说明正在执行工具（MCP 往返 / 长 Bash），此时静默是正常的，延期刊杀而非误杀。
         let _idleTimer;
+        let _lastToolUseAt = 0;
         function _resetIdleTimer() {
             if (_idleTimer)
                 clearTimeout(_idleTimer);
             _idleTimer = setTimeout(() => {
+                const toolRunning = _lastToolUseAt > 0 && (Date.now() - _lastToolUseAt) < TOOL_EXECUTION_TIMEOUT_MS;
+                if (toolRunning) {
+                    logger(`[claude-stream] Tool in progress for ${(Date.now() - _lastToolUseAt) / 1000}s, extending idle guard`);
+                    _resetIdleTimer();
+                    return;
+                }
                 logger(`[claude-stream] IDLE TIMEOUT after ${STREAM_IDLE_TIMEOUT_MS}ms of no output, killing process`);
                 try {
                     child.kill('SIGTERM');
@@ -1005,6 +1017,7 @@ async function _execClaudeStreaming(options, onEvent, retryCount = 0) {
                                 onEvent({ type: 'text', text: block.text, sessionId, isFinal: false });
                             }
                             else if (block.type === 'tool_use') {
+                                _lastToolUseAt = Date.now();
                                 const inputStr = block.input ? JSON.stringify(block.input) : '';
                                 const inputPreview = inputStr.length > 200 ? inputStr.slice(0, 200) + '...' : inputStr;
                                 onEvent({
