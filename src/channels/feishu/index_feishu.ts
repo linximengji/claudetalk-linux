@@ -1120,6 +1120,11 @@ except Exception as e:
   }
 
   private async sendAndWritePeerMessage(conversationId: string, content: string, isGroup: boolean): Promise<string> {
+    // 空内容飞书会返回 invalid message content，这里直接拦下并记录，避免报警刷屏
+    if (!content || !content.trim()) {
+      this.logger(`[sendAndWritePeerMessage] skip empty content to ${conversationId}`)
+      return ''
+    }
     if (content === '⏳ 处理中...') {
       this.logger(`[send-处理中-stack] ${new Error().stack?.split('\n').slice(2, 6).join(' | ')}`)
     }
