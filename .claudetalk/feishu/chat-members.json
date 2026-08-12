@@ -110,6 +110,12 @@
       "type": "bot",
       "openId": "ou_30b0945025fcfe9bbda426671f750e2b",
       "appId": "cli_aa838f41f9f8dbe7"
+    },
+    {
+      "name": "数字分身",
+      "type": "bot",
+      "openId": "ou_c9777ab3403b46ba5af02e5a87e37c57",
+      "appId": "cli_aad19954aa385d11"
     }
   ]
 }

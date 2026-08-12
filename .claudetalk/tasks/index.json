@@ -1,1 +1,12 @@
-{}
+{
+  "person-network-b": {
+    "status": "pending",
+    "summary": "[人域网络B段] 建真实人/地点/组织实体网络——需用户提供家人/同事/组织人际数据后才能实施。现积累不足(仅1人/2地/3组织)，硬做会造虚实体。待数据充足后执行。",
+    "type": "digital-twin",
+    "source": "twin-refactor-session",
+    "priority": "high",
+    "progress": "等待用户提供人际数据输入",
+    "created_at": "2026-08-12T01:19:45.705594Z",
+    "updated_at": "2026-08-12T01:19:45.705594Z"
+  }
+}

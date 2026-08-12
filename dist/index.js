@@ -19,7 +19,6 @@ import { assessRisk, requiresApproval, riskLabel } from './core/permission.js';
 import { buildApprovalCard, registerApproval, nextRequestId, buildTaskConfirmCard, inferTaskType, inferTaskPriority } from './channels/feishu/approval-handler.js';
 import { exec, spawn, execSync } from 'child_process';
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, appendFileSync } from 'fs';
-import { IdentityResolver } from './core/identity.js';
 import { request as httpRequest } from 'http';
 import { join } from 'path';
 // OpenTelemetry init — before any channel or HTTP activity
@@ -153,180 +152,6 @@ function waitForTunnelGone(ms) {
             });
         };
         poll();
-    });
-}
-async function twinFeedResponse(workDir, content, sourceRef) {
-    // 优先通过实体 /tool 写入（所有写入收敛实体）；实体不可达则 spawn 本地（fallback）
-    try {
-        const url = process.env.TWIN_ENTITY_URL || 'http://127.0.0.1:8790';
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 30_000);
-        try {
-            const res = await fetch(`${url}/tool`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ method: 'twin_ingest_user', params: { content, source_ref: sourceRef, source: 'twin_user' } }),
-                signal: controller.signal,
-            });
-            const data = await res.json();
-            if (res.ok && data?.ok) {
-                const r = data.result || {};
-                if (r.skipped === 'no_stance')
-                    console.log('[twinFeedResponse] gap skipped: ' + (r.gap_dimension || '?'));
-                else if (r.gap_matched)
-                    console.log('[twinFeedResponse] gap answered: ' + (r.gap_dimension || '?'));
-                return;
-            }
-            throw new Error(data?.error || `entity /tool twin_ingest_user failed: ${res.status}`);
-        }
-        finally {
-            clearTimeout(timer);
-        }
-    }
-    catch (e) {
-        void workDir;
-        // fallback：本地 spawn
-        await new Promise((resolve, reject) => {
-            const child = spawn('python3', [
-                '-c',
-                'import sys, json\n'
-                    + "sys.path.insert(0, '/home/ubuntu/projects/digital-clone')\n"
-                    + 'from twin.gap_detector import ingest_twin_message\n'
-                    + 'result = ingest_twin_message(content=sys.argv[1], source_ref=sys.argv[2], source=sys.argv[3])\n'
-                    + 'print(json.dumps(result, ensure_ascii=False))',
-                content, sourceRef, 'twin_user',
-            ], { stdio: ['ignore', 'pipe', 'pipe'] });
-            let stdout = '';
-            let stderr = '';
-            child.stdout?.on('data', (d) => { stdout += d.toString(); });
-            child.stderr?.on('data', (d) => { stderr += d.toString(); });
-            child.on('exit', code => {
-                if (code === 0) {
-                    if (stdout) {
-                        try {
-                            const r = JSON.parse(stdout.trim().split('\n').pop() || '{}');
-                            if (r.skipped === 'no_stance')
-                                console.log('[twinFeedResponse] gap skipped: ' + (r.gap_dimension || '?'));
-                            else if (r.gap_matched)
-                                console.log('[twinFeedResponse] gap answered: ' + (r.gap_dimension || '?'));
-                        }
-                        catch { /* ignore parse error */ }
-                    }
-                    resolve();
-                }
-                else
-                    reject(new Error('twinFeedResponse exit ' + code + ': ' + stderr.slice(0, 200)));
-            });
-            child.on('error', reject);
-        });
-    }
-}
-/** Call twin_chat via direct Python spawn, bypassing Claude API. */
-function callTwinChat(query, caller, context) {
-    return new Promise((resolve, reject) => {
-        const mode = detectProfileMode(query, caller);
-        const child = spawn('python3', [
-            '-c',
-            `import sys, json
-sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
-from twin.tools import handle_twin_chat
-result = handle_twin_chat(query=sys.argv[1], caller=sys.argv[2], mode=sys.argv[4], context=sys.argv[3] if sys.argv[3] else None)
-print(result)`,
-            query, caller, context || '', mode,
-        ], { stdio: ['ignore', 'pipe', 'pipe'] });
-        let stdout = '';
-        let stderr = '';
-        child.stdout?.on('data', (d) => { stdout += d.toString(); });
-        child.stderr?.on('data', (d) => { stderr += d.toString(); });
-        child.on('exit', code => {
-            if (code === 0) {
-                try {
-                    const parsed = JSON.parse(stdout.trim());
-                    resolve(parsed.answer ?? parsed.response ?? stdout.trim());
-                }
-                catch {
-                    resolve(stdout.trim());
-                }
-            }
-            else {
-                console.error(`[callTwinChat] exit ${code}: ${stderr.slice(0, 200)}`);
-                reject(new Error(`callTwinChat exit ${code}`));
-            }
-        });
-        child.on('error', reject);
-    });
-}
-/**
- * 流式调用 twin_chat：spawn Python 逐行读 NDJSON 事件（thought_delta/answer_delta/done）。
- * 返回最终 answer 文本；onEvent 回调每收到一个事件就触发（供飞书流式推送）。
- */
-/**
- * 检测 twin 对话的定制模式：
- * - "审视/核对" 意图 → review（分身挑待核对记忆，主人确认/纠正）
- * - 其余画像总结意图 → profile（跨类型高置信召回总结）
- * 仅 owner 触发。
- */
-function detectProfileMode(query, caller) {
-    if (caller !== 'owner')
-        return 'normal';
-    const q = query.toLowerCase();
-    const reviewPhrases = ['自我审视', '审视一下', '审视', '核对一下', '核对记忆', '你确认一下', '查看我的记忆'];
-    const profilePhrases = [
-        '总结我的', '我的决策', '决策逻辑', '我的习惯', '行为模式', '我的价值观',
-        '我是怎么', '我的思维方式', '我的性格', '我是什么样的人', '分析我',
-    ];
-    if (reviewPhrases.some(p => q.includes(p)))
-        return 'review';
-    if (profilePhrases.some(p => q.includes(p)))
-        return 'profile';
-    return 'normal';
-}
-function callTwinChatStream(query, caller, context, onEvent) {
-    return new Promise((resolve, reject) => {
-        const mode = detectProfileMode(query, caller);
-        const child = spawn('python3', [
-            '-c',
-            `import sys
-sys.path.insert(0, '/home/ubuntu/projects/digital-clone')
-from twin.tools import handle_twin_chat_stream
-def main():
-    for line in handle_twin_chat_stream(query=sys.argv[1], caller=sys.argv[2], context=sys.argv[3] if sys.argv[3] else None, mode=sys.argv[4]):
-        print(line, end='', flush=True)
-main()`,
-            query, caller, context || '', mode,
-        ], { stdio: ['ignore', 'pipe', 'pipe'] });
-        let finalAnswer = '';
-        let stderr = '';
-        let buffer = '';
-        child.stdout?.on('data', (d) => {
-            buffer += d.toString();
-            let idx;
-            while ((idx = buffer.indexOf('\n')) >= 0) {
-                const line = buffer.slice(0, idx).trim();
-                buffer = buffer.slice(idx + 1);
-                if (!line)
-                    continue;
-                try {
-                    const evt = JSON.parse(line);
-                    if (evt.type === 'done') {
-                        finalAnswer = evt.answer || '';
-                    }
-                    onEvent(evt);
-                }
-                catch { /* skip corrupt line */ }
-            }
-        });
-        child.stderr?.on('data', (d) => { stderr += d.toString(); });
-        child.on('exit', code => {
-            if (code === 0) {
-                resolve(finalAnswer);
-            }
-            else {
-                console.error(`[callTwinChatStream] exit ${code}: ${stderr.slice(0, 300)}`);
-                reject(new Error(`callTwinChatStream exit ${code}: ${stderr.slice(0, 200)}`));
-            }
-        });
-        child.on('error', reject);
     });
 }
 /**
@@ -540,8 +365,6 @@ export async function startBot(options) {
     const channel = createChannel(channelType, config, workDir, profile);
     const logger = createLogger(channelType, profile);
     logger(`[startBot] Starting channel=${channelType}, workDir=${workDir}`);
-    // ── IdentityResolver：纯本地用户表驱动，不再调飞书 API ──
-    const identityResolver = new IdentityResolver(workDir);
     // ── Singleton check: refuse if another instance is running ──
     try {
         if (existsSync(pidFile)) {
@@ -768,10 +591,8 @@ export async function startBot(options) {
                 }
                 return;
             }
-            // /twin <content>：通过 processedMessage 注入明确指令，让 LLM 用 twin_feed 工具摄入内容
-            const callerInfo = process.env.__TWIN_CALLER ? JSON.parse(process.env.__TWIN_CALLER) : {};
-            context.processedMessage =
-                `[用户提交了以下内容用于摄入数字分身记忆库。请调twin_feed MCP工具将内容摄入记忆库，并给出简短确认回复。]\n${twinContent}`;
+            // /twin <content>：直接把内容走实体 /chat（实体内部自动 feed 记忆库），bot 只转发
+            context.processedMessage = twinContent;
         }
         // ── /session 会话管理 ──
         if (isSessionCommand(command)) {
@@ -1166,120 +987,45 @@ export async function startBot(options) {
                 };
                 // Twin profile: direct call to twin_chat MCP tool (bypasses Claude API)
                 if (profile === 'twin') {
-                    let identity;
+                    // 实体是唯一大脑：bot 不判身份、不判模式、不拼上下文、不喂记忆，只传 channel+user_id
+                    const pendingMsg = context.processedMessage ?? message;
+                    let entityRes;
                     try {
-                        identity = await identityResolver.resolve(context.userId, config.feishu?.FEISHU_APP_ID || '');
+                        entityRes = await chatWithEntity({
+                            conversationId: context.conversationId,
+                            message: pendingMsg,
+                            channel: 'feishu',
+                            userId: context.userId,
+                            isGroup: context.isGroup,
+                        });
                     }
-                    catch (resolveErr) {
-                        logger(`[onMessage] identityResolver.resolve failed for twin: ${resolveErr}`);
-                        identity = { level: 'stranger', name: '陌生人', description: '回退到陌生人级别' };
+                    catch (entityErr) {
+                        // 实体是唯一路径（不下落本地区 spawn）；实体不可达时给个兜底提示，不发失控回复
+                        logger(`[onMessage] entity /chat failed: ${entityErr}`);
+                        await channel.sendMessage(context.conversationId, `分身服务暂不可用，请稍后再试。`, context.isGroup);
+                        return;
                     }
-                    const callerLevel = identity.level;
-                    const callerName = identity.name;
-                    const callerDesc = identity.description;
-                    const isOwner = callerLevel === 'owner';
-                    const callerInfo = JSON.stringify({ userId: context.userId, name: callerName, level: callerLevel, description: callerDesc });
-                    process.env.__TWIN_CALLER = callerInfo;
-                    const caller = isOwner ? 'owner' : 'external';
+                    let finalResult = entityRes.answer || '';
+                    const finalThought = entityRes.thought || '';
+                    // 身份由实体判定返回（owner / external）
+                    const isOwner = entityRes.caller === 'owner';
+                    const callerLevel = entityRes.caller === 'owner' ? 'owner' : 'external';
+                    const callerName = entityRes.name || '';
+                    const caller = entityRes.caller === 'owner' ? 'owner' : 'external';
                     // 思考过程开关：true=总是展示，false=总不展示，null/未配置=按身份默认（主人展示、外部不展示）
                     const _cfgShow = config?.twin?.showThinking;
                     const showThinking = (_cfgShow === undefined || _cfgShow === null) ? isOwner : !!_cfgShow;
-                    let finalResult = '';
-                    let finalThought = '';
-                    // Build conversation context from recent history (last 3 rounds)
-                    let chatContext;
-                    try {
-                        const convFile = join(workDir, '.claudetalk', 'twin', 'conversations.jsonl');
-                        if (existsSync(convFile)) {
-                            const lines = readFileSync(convFile, 'utf-8').trim().split('\n').filter(Boolean);
-                            const tail = lines.slice(-6);
-                            const parts = [];
-                            for (const line of tail) {
-                                try {
-                                    const e = JSON.parse(line);
-                                    if (e.conversationId === context.conversationId) {
-                                        parts.push(`用户: ${e.message}`);
-                                        parts.push(`你: ${e.reply}`);
-                                    }
-                                }
-                                catch { /* skip */ }
-                            }
-                            if (parts.length > 0) {
-                                chatContext = parts.slice(-6).join('\n');
-                            }
-                        }
-                    }
-                    catch { /* ignore context read error */ }
-                    const pendingMsg = context.processedMessage ?? message;
-                    const useEntity = !!process.env.TWIN_ENTITY_ENABLED;
-                    let entityReached = false;
-                    try {
-                        // 优先：实体常驻服务（带持续状态）。实体不可达/出错才回落。
-                        if (useEntity) {
-                            const entityRes = await chatWithEntity({
-                                conversationId: context.conversationId,
-                                message: pendingMsg,
-                                caller,
-                                isGroup: context.isGroup,
-                                context: chatContext,
-                            });
-                            entityReached = true;
-                            finalResult = entityRes.answer;
-                            finalThought = entityRes.thought;
-                        }
-                    }
-                    catch (entityErr) {
-                        logger(`[onMessage] twin-entity chat failed, fallback to direct spawn: ${entityErr}`);
-                    }
-                    if (!entityReached) {
-                        try {
-                            // 流式：思考过程先露出，随后正式回答逐字推送
-                            let thoughtBuf = '';
-                            finalResult = await callTwinChatStream(pendingMsg, caller, chatContext, evt => {
-                                if (evt.type === 'thought_delta') {
-                                    thoughtBuf += evt.text || '';
-                                    if (showThinking) {
-                                        editStatus('🧠 思考中… ' + (evt.text || '').replace(/\s+/g, ' ').slice(-90)).catch(() => { });
-                                    }
-                                }
-                                else if (evt.type === 'answer_delta') {
-                                    // 只滚动展示增量预览，避免与最终正式回复重复定格
-                                    editStatus('✍️ ' + (evt.text || '').replace(/\s+/g, ' ').slice(-90)).catch(() => { });
-                                }
-                                else if (evt.type === 'done') {
-                                    thoughtBuf = evt.thought || thoughtBuf;
-                                }
-                            });
-                            finalThought = thoughtBuf;
-                        }
-                        catch (chatErr) {
-                            logger(`[onMessage] callTwinChatStream failed: ${chatErr}`);
-                            // 降级：非流式 callTwinChat（干净 JSON → answer），绝不 fallback 到失控的 Claude API
-                            try {
-                                finalResult = await callTwinChat(pendingMsg, caller, chatContext);
-                            }
-                            catch (err2) {
-                                logger(`[onMessage] callTwinChat failed: ${err2}`);
-                                finalResult = `分身暂时无法回复，请稍后再试。错误: ${err2 instanceof Error ? err2.message : String(err2)}`;
-                            }
-                        }
-                    }
-                    delete process.env.__TWIN_CALLER;
-                    // LLM 流式可能返回空回答（代理/LLM 偶发），空内容发飞书会被拒绝，这里兜底
-                    if (!finalResult || !finalResult.trim()) {
+                    // 实体可能返回空回答（代理/LLM 偶发），空内容发飞书会被拒绝，这里兜底
+                    if (!finalResult.trim()) {
                         logger('[onMessage] twin returned empty reply, fallback to placeholder');
                         finalResult = '分身暂时没有生成有效回复，请再问一次。';
                     }
-                    // 思考过程开关：仅对分身主人展示，对外（external）只发正式回答
+                    // 思考过程展示：仅对主人展示，对外（external）只发正式回答
                     if (showThinking && finalThought && !finalResult.includes(finalThought.slice(0, 20))) {
                         const thoughtLines = finalThought.split('\n').filter((l) => l.trim()).map((l) => `▸ ${l}`).join('\n');
                         finalResult = `${finalResult}\n\n———————— 以下是分身的思考过程（内部推理，感兴趣再看）————————\n${thoughtLines}`;
                     }
                     logger(`[onMessage] Claude reply (first 200 chars): "${finalResult.substring(0, 200)}"`);
-                    // 只将用户消息摄入记忆（分身自己的回答不作为主人画像依据）
-                    if (isOwner && !context.isGroup) {
-                        twinFeedResponse(workDir, message, `twin_user_${context.conversationId}`).catch(e => logger(`[onMessage] twinFeedResponse(user_msg) error: ${e}`));
-                    }
                     _lastConvPair.set(context.conversationId, { message, reply: finalResult });
                     const nrResult = await archiveConversation({
                         message, reply: finalResult,
