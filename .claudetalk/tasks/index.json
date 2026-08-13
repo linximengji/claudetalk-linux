@@ -8,5 +8,55 @@
     "progress": "等待用户提供人际数据输入",
     "created_at": "2026-08-12T01:19:45.705594Z",
     "updated_at": "2026-08-12T01:19:45.705594Z"
+  },
+  "p3-deep-persona-mono": {
+    "status": "pending",
+    "summary": "[P3深层人格模拟效果跟踪] A清洗+B情境调用+C张力呈现已上线。日常对话观察技术/家庭/人生/社交域人格层激活是否像本人；若某域不像，调 _SITUATION_RULES 词表/人格层内容。",
+    "type": "digital-twin",
+    "source": "twin-refactor-session",
+    "priority": "medium",
+    "progress": "观察中，待日常对话反馈",
+    "created_at": "2026-08-12T14:25:38.851706Z",
+    "updated_at": "2026-08-12T14:25:38.851706Z"
+  },
+  "tier-diff-real-test": {
+    "status": "pending",
+    "summary": "[tier表达差异真实验证] P1/P2 五档(owner/family/friend/colleague/stranger)表达已实现且stranger在临时DB验证过。开放对外或有他人能测时，真实验证family/friend档位语气。",
+    "type": "identity",
+    "source": "twin-refactor-session",
+    "priority": "medium",
+    "progress": "当前owner-only，待对外或可测",
+    "created_at": "2026-08-12T14:25:38.851706Z",
+    "updated_at": "2026-08-12T14:25:38.851706Z"
+  },
+  "external-privacy-audit": {
+    "status": "pending",
+    "summary": "[对外隐私安全护栏复核] 正式对外开放前，专项审查 external 检索/表达层能否读到 private/敏感记忆、避免泄露主人隐私。boundaries+external降级已实现未实测。",
+    "type": "security",
+    "source": "twin-refactor-session",
+    "priority": "high",
+    "progress": "开放前必做",
+    "created_at": "2026-08-12T14:25:38.851706Z",
+    "updated_at": "2026-08-12T14:25:38.851706Z"
+  },
+  "review-backlog-check": {
+    "status": "pending",
+    "summary": "[审视待核对积压抽查] 清理删了大量记忆后，检查 reviewed=0 的信念/事件/模式是否还有积压需主人核对，避免旧状态失真。",
+    "type": "digital-twin",
+    "source": "twin-refactor-session",
+    "priority": "low",
+    "progress": "待抽查",
+    "created_at": "2026-08-12T14:25:38.851706Z",
+    "updated_at": "2026-08-12T14:25:38.851706Z"
+  },
+  "distill-domain-disposition": {
+    "status": "pending",
+    "summary": "[distill域知识去留确认] 153条领域知识已降权0.05作证据。确认是保留为background(证明技术匹配)还是最终清理。倾向保留。",
+    "type": "digital-twin",
+    "source": "twin-refactor-session",
+    "priority": "low",
+    "progress": "待确认",
+    "created_at": "2026-08-12T14:25:38.851706Z",
+    "updated_at": "2026-08-12T14:25:38.851706Z"
   }
 }
