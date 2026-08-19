@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "id": "2ffecbb0-7815-4865-91df-594490424d42",
+    "from": "claude code",
+    "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
+    "messageId": "om_x100b676dd80568b4b4ba693bbadf7db",
+    "message": "现在路由的分配是什么情况？",
+    "createdAt": 1787140464251,
+    "traceId": "7e7ed302",
+    "isGroup": true
+  }
+]
