@@ -471,11 +471,11 @@ const STREAM_IDLE_TIMEOUT_MS = 240_000
 const TOOL_EXECUTION_TIMEOUT_MS = 300_000
 
 // 自动压缩的 input token 阈值，超过此值时在响应后异步触发 /compact
-const ASYNC_COMPACT_THRESHOLD = 400_000
+const ASYNC_COMPACT_THRESHOLD = 300_000
 // 同步压缩阈值：超过此值时在请求前同步等待 /compact 完成
-const SYNC_COMPACT_THRESHOLD = 600_000
-// 自动 summarize+reset 阈值：超过此值时清空 session 并保留摘要
-const RESET_THRESHOLD = 800_000
+const SYNC_COMPACT_THRESHOLD = 450_000
+// 自动 summarize+reset 阈值：超过此值时清空 session 并保留结构化摘要
+const RESET_THRESHOLD = 600_000
 
 // 按 sessionKey 存储正在进行的压缩 Promise，用于防止并发操作同一 session
 const compactingPromises = new Map<string, Promise<void>>()
@@ -657,7 +657,17 @@ async function summarizeAndReset(
     activeSubprocesses.add(child)
     let stdout = ''
     child.stdout.on('data', (data: Buffer) => { stdout += data.toString() })
-    child.stdin.write('Summarize this entire conversation in 2-3 sentences. Be specific: what was discussed, decided, and what files/code were involved. Keep it concise.')
+    child.stdin.write('Summarize this entire conversation into a structured handoff document so a fresh session can continue work without redo. Output EXACTLY this Markdown shape, nothing else:\n\n' +
+      '## Files Changed\n' +
+      '- path/to/file — one-line description of the change (list every file actually modified)\n\n' +
+      '## Current Status\n' +
+      'What is in progress or already done. One or two terse sentences.\n\n' +
+      '## Next Steps\n' +
+      '1. next concrete action\n' +
+      '2. the one after that\n\n' +
+      '## Key Decisions\n' +
+      '- decision with one-line rationale\n\n' +
+      'Rules: use terse bullets; match the conversation language (Chinese in, Chinese out); cover file paths, code changes, decisions, and next steps; only list files/decisions that actually happened.')
     child.stdin.end()
     child.on('close', () => {
       activeSubprocesses.delete(child)
