@@ -41,6 +41,7 @@ export class FeishuClient {
     DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
     _dedupCleanupTimer = null;
     _isBusy = false; // 正在处理消息，后续消息进排队提示
+    _peerProcessing = false; // processPeerMessages 排他锁，防止 setInterval 重入导致并发处理
     botAppName = null;
     _lastConvGetter = null;
     // 群成员管理（委托给独立模块）
@@ -104,101 +105,111 @@ export class FeishuClient {
      * 找到 createdAt + 10秒 <= now 的消息，回复表情后走 Claude CLI 流程
      */
     async processPeerMessages(botName) {
-        const messages = loadPeerMessages(this.claudetalkDir, botName);
-        if (messages.length === 0)
+        // 排他锁：正在处理一批消息时，后续 setInterval tick 直接跳过，避免并发起第二个 Claude 子进程互相 Edit 中断
+        if (this._peerProcessing)
             return;
-        const now = Date.now();
-        const pendingMessages = messages.filter((msg) => !this.processedPeerIds.has(msg.id));
-        // 二次去重：同一飞书 messageId 只处理一次（防 WS 重复投递）
-        const seenMsgIds = new Set();
-        const dedupedMessages = pendingMessages.filter(msg => {
-            if (seenMsgIds.has(msg.messageId))
-                return false;
-            seenMsgIds.add(msg.messageId);
-            return true;
-        });
-        if (dedupedMessages.length === 0)
-            return;
-        this.logger(`Processing ${dedupedMessages.length} peer messages for bot_${botName}.json`);
-        const succeededIds = [];
-        for (const [idx, peerMsg] of dedupedMessages.entries()) {
-            this.processedPeerIds.set(peerMsg.id, now);
-            const traceTag = peerMsg.traceId ? `[trace=${peerMsg.traceId}] ` : '';
-            // 1. 给原消息回复 Get 表情（收到确认）
-            this.addMessageReaction(peerMsg.messageId, 'Get').catch((error) => {
-                this.logger(`${traceTag}Failed to add reaction to peer message ${peerMsg.messageId}: ${error}`);
+        this._peerProcessing = true;
+        let messages = [];
+        try {
+            messages = loadPeerMessages(this.claudetalkDir, botName);
+            if (messages.length === 0)
+                return;
+            const now = Date.now();
+            const pendingMessages = messages.filter((msg) => !this.processedPeerIds.has(msg.id));
+            // 二次去重：同一飞书 messageId 只处理一次（防 WS 重复投递）
+            const seenMsgIds = new Set();
+            const dedupedMessages = pendingMessages.filter(msg => {
+                if (seenMsgIds.has(msg.messageId))
+                    return false;
+                seenMsgIds.add(msg.messageId);
+                return true;
             });
-            // 2a. 审批回调：由 feishu-bridge 转发的 approval-action
-            if (peerMsg.message.startsWith('{') && peerMsg.message.includes('__approval_callback__')) {
-                try {
-                    const payload = JSON.parse(peerMsg.message);
-                    const result = handleApprovalCallback({
-                        request_id: payload.requestId,
-                        decision: payload.decision,
-                    });
-                    this.logger(`${traceTag}Approval callback result: ${JSON.stringify(result)}`);
+            if (dedupedMessages.length === 0)
+                return;
+            this.logger(`Processing ${dedupedMessages.length} peer messages for bot_${botName}.json`);
+            const succeededIds = [];
+            for (const [idx, peerMsg] of dedupedMessages.entries()) {
+                this.processedPeerIds.set(peerMsg.id, now);
+                const traceTag = peerMsg.traceId ? `[trace=${peerMsg.traceId}] ` : '';
+                // 1. 给原消息回复 Get 表情（收到确认）
+                this.addMessageReaction(peerMsg.messageId, 'Get').catch((error) => {
+                    this.logger(`${traceTag}Failed to add reaction to peer message ${peerMsg.messageId}: ${error}`);
+                });
+                // 2a. 审批回调：由 feishu-bridge 转发的 approval-action
+                if (peerMsg.message.startsWith('{') && peerMsg.message.includes('__approval_callback__')) {
+                    try {
+                        const payload = JSON.parse(peerMsg.message);
+                        const result = handleApprovalCallback({
+                            request_id: payload.requestId,
+                            decision: payload.decision,
+                        });
+                        this.logger(`${traceTag}Approval callback result: ${JSON.stringify(result)}`);
+                        succeededIds.push(peerMsg.id);
+                        continue;
+                    }
+                    catch (err) {
+                        this.logger(`${traceTag}Failed to handle approval callback: ${err}`);
+                    }
+                }
+                // 2b. 存档确认：由 feishu-bridge 转发的 confirm-archive 回调
+                if (peerMsg.message === '__confirm_archive__') {
+                    const pair = this._lastConvGetter?.(peerMsg.chatId);
+                    if (pair) {
+                        this.execConfirmArchive(peerMsg.chatId, pair).catch((err) => this.logger(`${traceTag}__confirm_archive__ error: ${err}`));
+                    }
+                    else {
+                        this.logger(`${traceTag}__confirm_archive__: _lastConvGetter returned null`);
+                    }
                     succeededIds.push(peerMsg.id);
                     continue;
                 }
-                catch (err) {
-                    this.logger(`${traceTag}Failed to handle approval callback: ${err}`);
+                // 2c. 排队提示：如果前面还有消息正在处理，先发一条排队通知
+                if (idx > 0 || this._isBusy) {
+                    this.sendTextMessage(peerMsg.chatId, '📥 消息已收到，等待当前处理完成后自动执行...', peerMsg.isGroup ?? peerMsg.chatId.startsWith('oc_')).catch(() => { });
+                }
+                // 2d. 走 channelMessageHandler 流程（即 Claude CLI 流程）
+                if (this.channelMessageHandler) {
+                    const senderName = peerMsg.from;
+                    const context = {
+                        conversationId: peerMsg.chatId,
+                        senderId: senderName,
+                        isGroup: peerMsg.isGroup ?? peerMsg.chatId.startsWith('oc_'),
+                        userId: peerMsg.senderOpenId || senderName,
+                        channelType: 'feishu',
+                        processedMessage: undefined,
+                    };
+                    this._isBusy = true;
+                    try {
+                        await this.channelMessageHandler(context, peerMsg.message);
+                        this.logger(`${traceTag}Peer message processed: id=${peerMsg.id}, from=${peerMsg.from}`);
+                        succeededIds.push(peerMsg.id);
+                    }
+                    catch (error) {
+                        this.logger(`${traceTag}Failed to process peer message id=${peerMsg.id}: ${error}`);
+                    }
+                    finally {
+                        this._isBusy = false;
+                    }
                 }
             }
-            // 2b. 存档确认：由 feishu-bridge 转发的 confirm-archive 回调
-            if (peerMsg.message === '__confirm_archive__') {
-                const pair = this._lastConvGetter?.(peerMsg.chatId);
-                if (pair) {
-                    this.execConfirmArchive(peerMsg.chatId, pair).catch((err) => this.logger(`${traceTag}__confirm_archive__ error: ${err}`));
-                }
-                else {
-                    this.logger(`${traceTag}__confirm_archive__: _lastConvGetter returned null`);
-                }
-                succeededIds.push(peerMsg.id);
-                continue;
-            }
-            // 2c. 排队提示：如果前面还有消息正在处理，先发一条排队通知
-            if (idx > 0 || this._isBusy) {
-                this.sendTextMessage(peerMsg.chatId, '📥 消息已收到，等待当前处理完成后自动执行...', peerMsg.isGroup ?? peerMsg.chatId.startsWith('oc_')).catch(() => { });
-            }
-            // 2d. 走 channelMessageHandler 流程（即 Claude CLI 流程）
-            if (this.channelMessageHandler) {
-                const senderName = peerMsg.from;
-                const context = {
-                    conversationId: peerMsg.chatId,
-                    senderId: senderName,
-                    isGroup: peerMsg.isGroup ?? peerMsg.chatId.startsWith('oc_'),
-                    userId: peerMsg.senderOpenId || senderName,
-                    channelType: 'feishu',
-                    processedMessage: undefined,
-                };
-                this._isBusy = true;
-                try {
-                    await this.channelMessageHandler(context, peerMsg.message);
-                    this.logger(`${traceTag}Peer message processed: id=${peerMsg.id}, from=${peerMsg.from}`);
-                    succeededIds.push(peerMsg.id);
-                }
-                catch (error) {
-                    this.logger(`${traceTag}Failed to process peer message id=${peerMsg.id}: ${error}`);
-                }
-                finally {
-                    this._isBusy = false;
+            // 原子删除成功处理的消息
+            if (succeededIds.length > 0) {
+                removePeerMessages(this.claudetalkDir, botName, new Set(succeededIds));
+                // 异步通知 bridge ACK（不阻塞当前流程）
+                for (const peerMsg of dedupedMessages) {
+                    if (succeededIds.includes(peerMsg.id)) {
+                        this.sendAck(peerMsg.id, peerMsg.traceId, 'ok').catch(() => { });
+                    }
                 }
             }
-        }
-        // 原子删除成功处理的消息
-        if (succeededIds.length > 0) {
-            removePeerMessages(this.claudetalkDir, botName, new Set(succeededIds));
-            // 异步通知 bridge ACK（不阻塞当前流程）
-            for (const peerMsg of dedupedMessages) {
-                if (succeededIds.includes(peerMsg.id)) {
-                    this.sendAck(peerMsg.id, peerMsg.traceId, 'ok').catch(() => { });
-                }
+            // 清理过期条目（>1h）
+            for (const [id, ts] of this.processedPeerIds.entries()) {
+                if (now - ts > 60 * 60 * 1000)
+                    this.processedPeerIds.delete(id);
             }
         }
-        // 清理过期条目（>1h）
-        for (const [id, ts] of this.processedPeerIds.entries()) {
-            if (now - ts > 60 * 60 * 1000)
-                this.processedPeerIds.delete(id);
+        finally {
+            this._peerProcessing = false;
         }
     }
     /**

@@ -63,6 +63,27 @@ function isSessionCommand(text: string): boolean {
   return text === '/session' || text.startsWith('/session ') || text === '会话' || text.startsWith('会话 ')
 }
 
+// 折叠连续>=3次相同的整行，防止小模型退化复读刷屏
+export function dedupeRepetitiveSentences(text: string): string {
+  const lines = text.split('\n')
+  const out: string[] = []
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    let j = i + 1
+    while (j < lines.length && lines[j] === line) j++
+    const run = j - i
+    if (run >= 3) {
+      out.push(line)
+      out.push(' ...')
+    } else {
+      for (let k = i; k < j; k++) out.push(lines[k])
+    }
+    i = j
+  }
+  return out.join('\n')
+}
+
 function httpHealthCheck(port: number): Promise<boolean> {
   return new Promise(resolve => {
     const req = httpRequest({ hostname: '127.0.0.1', port, path: '/health', method: 'GET', timeout: 2000 }, (res) => {
@@ -1174,7 +1195,7 @@ export async function startBot(options: StartBotOptions): Promise<void> {
           })
         }
         // 最终回复优先用 result event 的 finalResult，流式 lastText 可能含 subagent 转发前缀
-        const textToShow = finalResult || lastText
+        const textToShow = dedupeRepetitiveSentences(finalResult || lastText)
         if (lastEditText !== textToShow && textToShow) {
           try {
             await channel.editMessage!(context.conversationId, statusMsgId, textToShow)
@@ -1211,7 +1232,7 @@ export async function startBot(options: StartBotOptions): Promise<void> {
             summary: nrResult.summary!,
           })
         }
-        await channel.sendMessage(context.conversationId, replyText, context.isGroup)
+        await channel.sendMessage(context.conversationId, dedupeRepetitiveSentences(replyText), context.isGroup)
       }
     } catch (error) {
       const stack = error instanceof Error ? error.stack : String(error)

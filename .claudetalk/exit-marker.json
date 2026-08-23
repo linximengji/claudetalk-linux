@@ -1,8 +1,8 @@
 {
   "type": "process.exit",
-  "ts": "2026-08-11T04:32:38.468Z",
-  "pid": 2506153,
-  "uptime_s": 425789,
+  "ts": "2026-08-21T08:46:28.063Z",
+  "pid": 4022088,
+  "uptime_s": 1133846,
   "startup_phases": [
     "initLogFile",
     "loadConfig",

@@ -30,6 +30,7 @@ export declare class FeishuClient implements Channel {
     private readonly DEDUP_TTL_MS;
     private _dedupCleanupTimer;
     private _isBusy;
+    private _peerProcessing;
     private botAppName;
     private _lastConvGetter;
     private readonly chatMemberStore;

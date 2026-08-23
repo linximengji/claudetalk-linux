@@ -120,10 +120,20 @@ export function getSessionKey(
   userId?: string,
   isGroup?: boolean,
 ): string {
-  const parts = [conversationId, workDir]
-  if (profile) parts.push(profile)
-  if (channel) parts.push(channel)
-  if (userId && !isGroup) parts.push(userId)
+  const clean = (s: string): string => s.split('\x00')[0].trim()
+  const parts = [clean(conversationId), clean(workDir)]
+  if (profile) {
+    const p = clean(profile)
+    if (p) parts.push(p)
+  }
+  if (channel) {
+    const c = clean(channel)
+    if (c) parts.push(c)
+  }
+  if (userId && !isGroup) {
+    const u = clean(userId)
+    if (u) parts.push(u)
+  }
   return parts.join('\x00')
 }
 

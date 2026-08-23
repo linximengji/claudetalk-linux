@@ -1,13 +1,46 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert'
+import * as fs from 'fs'
+import * as path from 'path'
+import { mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
 import { FeishuClient } from './index_feishu.js'
+import { getPeerMessageFilePath } from './peer-message.js'
 
-function createMinimalClient(): FeishuClient {
+function createMinimalClient(overrides: Record<string, any> = {}): FeishuClient {
   return new (FeishuClient as any)({
     appId: 'test_app_id',
     appSecret: 'test_app_secret',
     profileName: 'test',
+    ...overrides,
   })
+}
+
+/** 创建一个隔离的临时工作目录，用于 peer-message 文件读写，用完自动清理 */
+function withTempWorkDir(body: (workDir: string) => Promise<void>): Promise<void> {
+  const workDir = mkdtempSync(path.join(tmpdir(), 'ctalk-test-'))
+  return body(workDir).finally(() => {
+    try { rmSync(workDir, { recursive: true, force: true }) } catch { /* ignore */ }
+  })
+}
+
+/** 在临时工作目录写入一条 peer-message */
+function writePeerMessage(workDir: string, botName: string, msg: Partial<any>): void {
+  const filePath = getPeerMessageFilePath(path.join(workDir, '.claudetalk'), botName)
+  const dir = path.dirname(filePath)
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  const existing: any[] = fs.existsSync(filePath) ? JSON.parse(fs.readFileSync(filePath, 'utf-8')) : []
+  existing.push({
+    id: msg.id ?? `id_${existing.length}`,
+    from: msg.from ?? 'user1',
+    chatId: msg.chatId ?? 'oc_test',
+    messageId: msg.messageId ?? `om_${existing.length}`,
+    message: msg.message ?? 'hello',
+    createdAt: msg.createdAt ?? Date.now(),
+    isGroup: msg.isGroup ?? true,
+    ...msg,
+  })
+  writeFileSync(filePath, JSON.stringify(existing, null, 2), 'utf-8')
 }
 
 describe('FeishuClient.stop()', () => {
