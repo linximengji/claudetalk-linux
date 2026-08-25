@@ -5,7 +5,7 @@
  * 实体做大脑（persona + 记忆 + LLM + 持续状态），claudetalk 保持飞书收发。
  */
 const TWIN_ENTITY_URL = process.env.TWIN_ENTITY_URL || 'http://127.0.0.1:8790'
-const ENTITY_TIMEOUT_MS = 30_000
+const ENTITY_TIMEOUT_MS = 60_000
 
 export interface TwinChatInput {
   conversationId: string

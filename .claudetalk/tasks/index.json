@@ -30,33 +30,33 @@
     "updated_at": "2026-08-12T14:25:38.851706Z"
   },
   "external-privacy-audit": {
-    "status": "pending",
-    "summary": "[对外隐私安全护栏复核] 正式对外开放前，专项审查 external 检索/表达层能否读到 private/敏感记忆、避免泄露主人隐私。boundaries+external降级已实现未实测。",
+    "status": "completed",
+    "summary": "[对外隐私安全护栏复核] 实测发现并修复3个external↔private泄漏漏洞:①_keyword_search无caller过滤(向量退化/冷门词时泄漏private);②search_reflections无caller过滤(43条private反思每次请求必带);③_collect_unreviewed无caller过滤(external bulk_audit批量泄漏416→114)。均按_like_fallback模式加sensitivity='public'过滤+传caller。owner功能保留,8测试+端到端验证通过。",
     "type": "security",
     "source": "twin-refactor-session",
     "priority": "high",
-    "progress": "开放前必做",
+    "progress": "已完成",
     "created_at": "2026-08-12T14:25:38.851706Z",
-    "updated_at": "2026-08-12T14:25:38.851706Z"
+    "updated_at": "2026-08-24T23:45:00.000000Z"
   },
   "review-backlog-check": {
-    "status": "pending",
-    "summary": "[审视待核对积压抽查] 清理删了大量记忆后，检查 reviewed=0 的信念/事件/模式是否还有积压需主人核对，避免旧状态失真。",
+    "status": "completed",
+    "summary": "[审视待核对积压抽查] 记忆库从未核对(962条reviewed=0)。判定系统深度摄入可信,不逐条核对。处置3处语义冲突:身份双层确认(291)、过时存储信念重写(552)、旧信念遗忘(1083),冲突清零。",
     "type": "digital-twin",
     "source": "twin-refactor-session",
     "priority": "low",
-    "progress": "待抽查",
+    "progress": "已完成",
     "created_at": "2026-08-12T14:25:38.851706Z",
-    "updated_at": "2026-08-12T14:25:38.851706Z"
+    "updated_at": "2026-08-24T23:30:00.000000Z"
   },
   "distill-domain-disposition": {
-    "status": "pending",
-    "summary": "[distill域知识去留确认] 153条领域知识已降权0.05作证据。确认是保留为background(证明技术匹配)还是最终清理。倾向保留。",
+    "status": "completed",
+    "summary": "[distill域知识去留确认] 查明无降权0.05证据——42条distilled_expertise活性(dill0.3+)，备份153条及重叠36条均非降权态。结论:active保留(技术匹配核心),备份快照保留无成本,无需清理。",
     "type": "digital-twin",
     "source": "twin-refactor-session",
     "priority": "low",
-    "progress": "待确认",
+    "progress": "已完成",
     "created_at": "2026-08-12T14:25:38.851706Z",
-    "updated_at": "2026-08-12T14:25:38.851706Z"
+    "updated_at": "2026-08-24T23:30:00.000000Z"
   }
 }

@@ -85,13 +85,23 @@ export function getSessionMap(workDir) {
  * userId 仅用于私聊隔离，群聊中同一群的所有人共享一个 session（共享旅行计划信息）。
  */
 export function getSessionKey(conversationId, workDir, profile, channel, userId, isGroup) {
-    const parts = [conversationId, workDir];
-    if (profile)
-        parts.push(profile);
-    if (channel)
-        parts.push(channel);
-    if (userId && !isGroup)
-        parts.push(userId);
+    const clean = (s) => s.split('\x00')[0].trim();
+    const parts = [clean(conversationId), clean(workDir)];
+    if (profile) {
+        const p = clean(profile);
+        if (p)
+            parts.push(p);
+    }
+    if (channel) {
+        const c = clean(channel);
+        if (c)
+            parts.push(c);
+    }
+    if (userId && !isGroup) {
+        const u = clean(userId);
+        if (u)
+            parts.push(u);
+    }
     return parts.join('\x00');
 }
 // 记录哪些 session 在 claude 进程运行期间被用户显式清除了
@@ -969,6 +979,7 @@ async function _execClaudeStreaming(options, onEvent, retryCount = 0) {
         // 说明正在执行工具（MCP 往返 / 长 Bash），此时静默是正常的，延期刊杀而非误杀。
         let _idleTimer;
         let _lastToolUseAt = 0;
+        let _idleKilled = false; // 区分"我们自己杀的"与外部信号，决定重试策略
         function _resetIdleTimer() {
             if (_idleTimer)
                 clearTimeout(_idleTimer);
@@ -980,6 +991,7 @@ async function _execClaudeStreaming(options, onEvent, retryCount = 0) {
                     return;
                 }
                 logger(`[claude-stream] IDLE TIMEOUT after ${STREAM_IDLE_TIMEOUT_MS}ms of no output, killing process`);
+                _idleKilled = true;
                 try {
                     child.kill('SIGTERM');
                 }
@@ -1140,7 +1152,13 @@ async function _execClaudeStreaming(options, onEvent, retryCount = 0) {
                     stderr.includes('session ID') ||
                     stderr.includes('Invalid session') ||
                     stderr.includes('Session not found');
-                if (isSessionInvalid) {
+                // Idle-killed（exit 143 且被本守卫杀死）：原会话往往被毒化（空签名 thinking）
+                // 或上游持续无响应，原样 --resume 重试只会再被杀。按会话失效处理：清会话
+                // + 注入上下文新开会话，打破盲重试循环。
+                if (isSessionInvalid || _idleKilled) {
+                    if (_idleKilled && !isSessionInvalid) {
+                        logger(`[claude-stream] Idle-killed (code ${code}), treating as dead session`);
+                    }
                     if (retryCount >= MAX_SESSION_RETRY_COUNT) {
                         logger(`[claude-stream] Session invalid, max retries reached`);
                         reject(new Error(`会话已过期且重试次数已达上限，请发送"新会话"重置后重试`));

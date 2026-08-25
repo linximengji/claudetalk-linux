@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "id": "8b7eed52-780e-4cbe-8d4f-f6392c7c1761",
+    "from": "claude code",
+    "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
+    "messageId": "om_x100b67f99a6748a0b1dfd52b7f6164e",
+    "message": "force switch切到qwen3.8",
+    "createdAt": 1787616587452,
+    "traceId": "57074126",
+    "isGroup": true
+  }
+]

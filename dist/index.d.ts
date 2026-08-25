@@ -6,6 +6,7 @@ export interface StartBotOptions {
     workDir: string;
     profile?: string;
 }
+export declare function dedupeRepetitiveSentences(text: string): string;
 /**
  * 启动 Bot
  */

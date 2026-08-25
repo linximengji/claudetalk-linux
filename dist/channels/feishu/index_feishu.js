@@ -129,7 +129,6 @@ export class FeishuClient {
             this.logger(`Processing ${dedupedMessages.length} peer messages for bot_${botName}.json`);
             const succeededIds = [];
             for (const [idx, peerMsg] of dedupedMessages.entries()) {
-                this.processedPeerIds.set(peerMsg.id, now);
                 const traceTag = peerMsg.traceId ? `[trace=${peerMsg.traceId}] ` : '';
                 // 1. 给原消息回复 Get 表情（收到确认）
                 this.addMessageReaction(peerMsg.messageId, 'Get').catch((error) => {
@@ -194,6 +193,9 @@ export class FeishuClient {
             }
             // 原子删除成功处理的消息
             if (succeededIds.length > 0) {
+                // 仅标记成功处理的 id（失败消息不标记，留待下次重试）
+                for (const id of succeededIds)
+                    this.processedPeerIds.set(id, now);
                 removePeerMessages(this.claudetalkDir, botName, new Set(succeededIds));
                 // 异步通知 bridge ACK（不阻塞当前流程）
                 for (const peerMsg of dedupedMessages) {
