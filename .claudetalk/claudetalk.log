@@ -164,3 +164,7 @@
 [2026-08-21T08:46:28.889Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk
 [2026-08-24T06:36:17.074Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk
 [2026-08-24T09:01:23.890Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk
+[2026-08-25T10:02:25.630Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile default" workDir=/home/ubuntu/projects/claudetalk
+[2026-08-25T10:04:05.039Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile twin" workDir=/home/ubuntu/projects/claudetalk
+[2026-08-25T10:04:07.360Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile trip" workDir=/home/ubuntu/projects/claudetalk
+[2026-08-25T17:23:36.568Z] [BOOT] argv="/home/ubuntu/projects/claudetalk/dist/cli.js --profile twin" workDir=/home/ubuntu/projects/claudetalk

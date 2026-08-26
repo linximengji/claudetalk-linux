@@ -974,11 +974,12 @@ export async function startBot(options) {
             }
         }
         // 调用 Claude Code CLI 处理消息
+        let statusMsgId = '';
         try {
             const useStreaming = !!(channel.editMessage && channel.sendMessageWithId);
             if (useStreaming) {
                 // 流式模式：发状态消息 → 按步骤推送一句话总结
-                let statusMsgId = await channel.sendMessageWithId(context.conversationId, '⏳ 处理中...', context.isGroup);
+                statusMsgId = await channel.sendMessageWithId(context.conversationId, '⏳ 处理中...', context.isGroup);
                 let lastEditText = '⏳ 处理中...';
                 let lastText = '';
                 let lastEditTime = 0;
@@ -1088,7 +1089,12 @@ export async function startBot(options) {
                             summary: nrResult.summary,
                         });
                     }
-                    await channel.sendMessage(context.conversationId, finalResult, context.isGroup);
+                    try {
+                        await channel.editMessage(context.conversationId, statusMsgId, `✅ ${finalResult}`);
+                    }
+                    catch {
+                        await channel.sendMessage(context.conversationId, finalResult, context.isGroup);
+                    }
                     return;
                 }
                 const { result: finalResult } = await callClaudeStreaming({
@@ -1160,9 +1166,9 @@ export async function startBot(options) {
                 }
                 // 最终回复优先用 result event 的 finalResult，流式 lastText 可能含 subagent 转发前缀
                 const textToShow = dedupeRepetitiveSentences(finalResult || lastText);
-                if (lastEditText !== textToShow && textToShow) {
+                if (textToShow && lastEditText !== `✅ ${textToShow}`) {
                     try {
-                        await channel.editMessage(context.conversationId, statusMsgId, textToShow);
+                        await channel.editMessage(context.conversationId, statusMsgId, `✅ ${textToShow}`);
                     }
                     catch { /* ignore */ }
                 }
@@ -1209,7 +1215,18 @@ export async function startBot(options) {
             if (error instanceof Error && error.stack) {
                 logger(`[ERROR STACK] ${error.stack}`);
             }
-            await channel.sendMessage(context.conversationId, errorText, context.isGroup).catch(() => { });
+            // 流式中断：状态消息打上 ⚠️ 标记，不悬停在半句话
+            if (channel.editMessage && statusMsgId) {
+                try {
+                    await channel.editMessage(context.conversationId, statusMsgId, `⚠️ ${errorText}`);
+                }
+                catch {
+                    await channel.sendMessage(context.conversationId, errorText, context.isGroup).catch(() => { });
+                }
+            }
+            else {
+                await channel.sendMessage(context.conversationId, errorText, context.isGroup).catch(() => { });
+            }
         }
     }
     // 注册"最近对话"回调，供飞书卡片确认存档使用
