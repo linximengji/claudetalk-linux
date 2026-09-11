@@ -1421,3 +1421,4 @@
 {"ts":"2026-09-10T08:05:33.386Z","workDir":"/home/ubuntu/projects/claudetalk","model":"deepseek-v4-pro","inputTokens":649,"outputTokens":1470,"cacheReadTokens":168192,"costUSD":0.124091,"session_id":"3a03e825-4da2-4988-9cc1-7b1e44be82a1"}
 {"ts":"2026-09-10T10:46:43.468Z","workDir":"/home/ubuntu/projects/claudetalk","model":"deepseek-v4-pro","inputTokens":3455,"outputTokens":7031,"cacheReadTokens":1209984,"costUSD":0.7980419999999999,"session_id":"3a03e825-4da2-4988-9cc1-7b1e44be82a1"}
 {"ts":"2026-09-11T09:16:18.320Z","workDir":"/home/ubuntu/projects/claudetalk","model":"deepseek-v4-pro","inputTokens":828,"outputTokens":8290,"cacheReadTokens":601856,"costUSD":0.512318,"session_id":"bfe74f1c-b36d-466e-bcb5-a266866b1614"}
+{"ts":"2026-09-11T10:41:32.192Z","workDir":"/home/ubuntu/projects/claudetalk","model":"deepseek-v4-pro","inputTokens":1900,"outputTokens":29446,"cacheReadTokens":2298624,"costUSD":1.894962,"session_id":"bfe74f1c-b36d-466e-bcb5-a266866b1614"}
