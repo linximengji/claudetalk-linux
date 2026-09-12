@@ -1,12 +1,12 @@
 [
   {
-    "id": "81d717d4-3d6d-4fc5-80b3-a6f8013f985e",
+    "id": "f9bce1dc-93d2-4cef-8d94-b14d688be2d2",
     "from": "claude code",
     "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
-    "messageId": "om_x100b6561582ce0a4b4afd6579ed55fa",
-    "message": "测试一下，是否实际生效",
-    "createdAt": 1789219185654,
-    "traceId": "67403d6d",
+    "messageId": "om_x100b6561c12bf4a0b48cf2eab8354e3",
+    "message": "[file message]",
+    "createdAt": 1789221122580,
+    "traceId": "cfbca5bc",
     "isGroup": true
   }
 ]
