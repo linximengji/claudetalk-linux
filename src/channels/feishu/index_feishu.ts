@@ -100,6 +100,8 @@ export class FeishuClient implements Channel {
   private _peerProcessing = false; // processPeerMessages 排他锁，防止 setInterval 重入导致并发处理
   private botAppName: string | null = null;
   private _lastConvGetter: ((convId: string) => { message: string; reply: string } | null) | null = null;
+  private outboxPollTimer: ReturnType<typeof setInterval> | null = null;
+  private processedOutboxIds = new Set<string>();
 
   // 群成员管理（委托给独立模块）
   private readonly chatMemberStore: ChatMemberStore;
@@ -177,6 +179,62 @@ export class FeishuClient implements Channel {
    * 处理 peer-messages
    * 找到 createdAt + 10秒 <= now 的消息，回复表情后走 Claude CLI 流程
    */
+  /**
+   * 数字分身待办提醒 outbox 轮询（仅 twin bot）。
+   * 读 twin_entity 写的 outbox.jsonl，逐条发飞书私聊，按已处理 id 过滤删除（同 peer-message 清理思路）。
+   */
+  private startOutboxPolling(): void {
+    if (this.config.profileName !== 'twin') return;
+    const outboxPath = this.config.twinOutboxPath;
+    if (!outboxPath) {
+      this.logger('[outbox] twinOutboxPath not configured, skip todo reminder outbox');
+      return;
+    }
+    this.outboxPollTimer = setInterval(() => {
+      this.processOutbox(outboxPath).catch((err) => {
+        this.logger(`[outbox] process error: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }, 5000);
+  }
+
+  private async processOutbox(outboxPath: string): Promise<void> {
+    if (!fs.existsSync(outboxPath)) return;
+    const lines = fs.readFileSync(outboxPath, 'utf-8').split('\n').filter((l) => l.trim());
+    const pending: Array<{ id: string; receive_id: string; content: string }> = [];
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.id && !this.processedOutboxIds.has(entry.id)) {
+          pending.push(entry);
+        }
+      } catch { /* 坏行忽略 */ }
+    }
+    if (pending.length === 0) return;
+
+    let sent = 0;
+    for (const entry of pending) {
+      try {
+        await this.sendTextMessage(entry.receive_id, entry.content, false);
+        this.processedOutboxIds.add(entry.id);
+        sent++;
+      } catch (err) {
+        this.logger(`[outbox] send failed for ${entry.id}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    // 清理：过滤已处理 id，原子写回（临时文件 + rename），避免并发覆盖
+    const remaining = lines.filter((line) => {
+      try {
+        const entry = JSON.parse(line);
+        return entry.id && !this.processedOutboxIds.has(entry.id);
+      } catch { return false; }
+    });
+    const tmpPath = `${outboxPath}.tmp`;
+    fs.writeFileSync(tmpPath, remaining.join('\n') + (remaining.length ? '\n' : ''), 'utf-8');
+    fs.renameSync(tmpPath, outboxPath);
+    this.logger(`[outbox] sent ${sent}, cleaned ${lines.length - remaining.length}`);
+  }
+
   private async processPeerMessages(botName: string): Promise<void> {
     // 排他锁：正在处理一批消息时，后续 setInterval tick 直接跳过，避免并发起第二个 Claude 子进程互相 Edit 中断
     if (this._peerProcessing) return;
@@ -458,6 +516,9 @@ export class FeishuClient implements Channel {
         '  export FEISHU_APP_SECRET=your_app_secret'
       );
     }
+
+    // 数字分身待办提醒 outbox 轮询（仅 twin bot；directWS 与非 directWS 都需启动）
+    this.startOutboxPolling();
 
     if (this.config.directWS) {
       this.logger('[feishu] Direct WS mode — creating own WebSocket connection');
@@ -1434,6 +1495,7 @@ registerChannel({
       profileName: config.profileName,
       systemPrompt: config.systemPrompt,
       directWS: config.directWS === 'true',
+      twinOutboxPath: config.twinOutboxPath,
     });
   },
 });

@@ -33,6 +33,8 @@ export declare class FeishuClient implements Channel {
     private _peerProcessing;
     private botAppName;
     private _lastConvGetter;
+    private outboxPollTimer;
+    private processedOutboxIds;
     private readonly chatMemberStore;
     private readonly chatMemberResolver;
     private readonly logger;
@@ -53,6 +55,12 @@ export declare class FeishuClient implements Channel {
      * 处理 peer-messages
      * 找到 createdAt + 10秒 <= now 的消息，回复表情后走 Claude CLI 流程
      */
+    /**
+     * 数字分身待办提醒 outbox 轮询（仅 twin bot）。
+     * 读 twin_entity 写的 outbox.jsonl，逐条发飞书私聊，按已处理 id 过滤删除（同 peer-message 清理思路）。
+     */
+    private startOutboxPolling;
+    private processOutbox;
     private processPeerMessages;
     /**
      * 注册 Channel 统一消息处理器（实现 Channel 接口）

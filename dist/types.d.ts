@@ -319,6 +319,8 @@ export interface FeishuChannelConfig {
     workDir?: string;
     /** 直连模式：创建自己的 WebSocket 连接，不依赖 feishu-bridge（用于 trip bot 等独立 bot） */
     directWS?: boolean;
+    /** 数字分身待办提醒 outbox 路径（twin_entity 写入，twin bot 轮询发送飞书私聊） */
+    twinOutboxPath?: string;
 }
 /**
  * Bot 间协作消息（peer-message）
