@@ -1,15 +1,15 @@
 {
   "oc_44ba0d81afa9189a67ef99d0bce1124d\u0000/home/ubuntu/projects/claudetalk\u0000default\u0000feishu": {
     "sessionId": "870f9768-8cf5-4c44-8788-71d20a483044",
-    "lastActiveAt": 1789398477274,
+    "lastActiveAt": 1789399414110,
     "isGroup": true,
     "conversationId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
     "userId": "claude code",
     "subagentEnabled": false,
     "channel": "feishu",
-    "cumulatedInputTokens": 12336,
-    "toolCallCount": 16,
-    "lastMessage": "状态记忆和目标感是不是要有些长期的目标会好一点。",
-    "lastReply": "对，这是个实在的缺口。现在 `current_goal` 是**单个、偏短期**的（「完善数字分身的时间意识」这种），分身缺一个更稳定、更长尺度的方向层。\n\n一个人（分身要模拟的对象）的目标其实是分三层的：\n\n| 层 | 例子 | 变化频率 | 现状 |\n|----|------|---------|------|\n| **长期目标**（愿景/方向） | 「在半导体失效分析建立方法论体系」 | 几个月~几年不变 | ❌ 缺 |\n| **当前目标**（聚焦） | 「完善数字分身的时间意识」 | 几周变化 | ✅ `current_goal` |\n| **待办**（任务） | 「明天交报告」 | 天天变 | ✅ `todos` |\n\n长期目标变化频率极低、接近底色，但它和「当前目标」同属「目标」语义，不该塞进价值观/persona 卡。我的建议：\n\n**加一个 `long_term_goals`（列表，因为长期目标可能不止一个）**，和 `current_goal`/`todos` 一起放 `cognitive.json`：\n\n1. **存储**：`long_term_goals: [\"."
+    "cumulatedInputTokens": 12932,
+    "toolCallCount": 17,
+    "lastMessage": "我也倾向于列表。",
+    "lastReply": "长期目标层补上了。\n\n**改动**（`cognitive_state.py` + `reasoning.py` + 测试）：\n- `cognitive.json` 加 `long_term_goals` 列表（去重）\n- 解析轨加 `set_long_term_goal` verb，规则层里**放在 `set_goal` 之前匹配**（否则「长期目标是X」会被「目标是」抢走）\n- 长期目标 + 当前目标一起注入表达轨 system（长期在前），`recall_state` 三层展示\n- 测试 `39 passed`\n\n**验证**：\n- 「长期目标是建立失效分析方法论」→ 落 `long_term_goals` ✓\n- 「当前目标是完善数字分身」→ 落 `current_goal` ✓\n- 查状态 → 分身正确带出「长期 + 当前」两层，并分清优先级 ✓\n\n现在分身的「目标感」是立体三层：**长期方向 → 当前聚焦 → 具体待办**，不再是单一短期目标。\n\n清单还剩 ⑤记忆治理闭环、⑥表达习惯对齐。⑤是数据治理（事实/推断/错误三分类 + baseline），⑥靠日常对话自然累积。要继"
   }
 }
