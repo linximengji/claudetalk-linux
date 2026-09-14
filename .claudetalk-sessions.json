@@ -1,15 +1,15 @@
 {
   "oc_44ba0d81afa9189a67ef99d0bce1124d\u0000/home/ubuntu/projects/claudetalk\u0000default\u0000feishu": {
     "sessionId": "870f9768-8cf5-4c44-8788-71d20a483044",
-    "lastActiveAt": 1789323212558,
+    "lastActiveAt": 1789344883375,
     "isGroup": true,
     "conversationId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
     "userId": "claude code",
     "subagentEnabled": false,
     "channel": "feishu",
-    "cumulatedInputTokens": 5465,
-    "toolCallCount": 10,
-    "lastMessage": "方案2，好一点",
-    "lastReply": "解析轨规则化完成，回应了你的质疑。\n\n**改动**（`reasoning.py` + 测试）：\n- 新增 `_rule_parse_intents`：5 个句式明确的 verb（问时间/查状态/记待办/设目标/工程落地）走确定性正则，命中就跳过 LLM（零随机、可单测）\n- `_execute_intents` 加 `trusted` 参数：规则命中的写操作直接写，LLM 判的写操作降级为「（未执行）先没记」提示\n- LLM 只处理有指代/模糊的（审视流程 8 verb），分类空间从 15 缩到 8\n- 测试补 3 例，`33 passed`\n\n**真实验证**：\n- 「帮我记着点明天开会」→ 规则命中，直接写 ✓\n- 「记住，上次那个方案」（强调句）→ 不写，追问澄清 ✓\n- `cognitive.json` 只落真实待办，无「嘴上记了手上没写」 ✓\n\n**过程中又揪出一个同类坑**：降级文案最初写成「你是想记下X吗？」这种**确认式**，表达轨 LLM 把它误解成「已记下」——又是嘴手不一致。改成「（未执行）先没记」的未执行陈述后，表达轨才如实说没记。这条已写进 D9。\n\ntask"
+    "cumulatedInputTokens": 6076,
+    "toolCallCount": 11,
+    "lastMessage": "主动出发，给我一个方案。",
+    "lastReply": "调研清楚了。现状：`gap` 推送已退化成「对话间隙追问」（不再主动推飞书）；claudetalk 侧有成熟的飞书发送能力（`FeishuApiClient` + `feishu_send_text` 等 MCP 工具），twin bot 凭证和群 chat_id 都拿得到。方案如下：\n\n## ③主动触发 方案\n\n**核心**：分身定时检查自己的待办，主动通过飞书提醒你，不等你开口问。\n\n### 触发与检查（twin_entity 侧，已有 Scheduler）\n\n- 新增调度任务 `todo_reminder`，cron 每天固定时间（如 9:00）\n- 读 `cognitive.json` 的 `todos`，非空则拼提醒文本：「你还有 2 条待办：1. 下周交报告 2. …」\n- 频控：`jobs.json` 的 `last_run` 天然保证一天最多一次，重启不重复\n\n### 推送链路（这是关键决策，跨了 twin_entity 和 claudetalk）\n\n飞书发送能力在 claudetalk（`FeishuApiClient`），twin_entity 是 Python、不"
   }
 }
