@@ -8,5 +8,15 @@
     "createdAt": 1789433001040,
     "traceId": "710c0f92",
     "isGroup": true
+  },
+  {
+    "id": "4fa1899f-1a1b-43f0-a6f8-f5717d5da034",
+    "from": "claude code",
+    "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
+    "messageId": "om_x100b65bdf972d0a8b1f4f825a071d75",
+    "message": "继续",
+    "createdAt": 1789434749899,
+    "traceId": "00c45e6f",
+    "isGroup": true
   }
 ]
