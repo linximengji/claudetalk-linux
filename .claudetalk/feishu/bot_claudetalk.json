@@ -1,12 +1,12 @@
 [
   {
-    "id": "966c8e7b-b971-4c4d-8a5d-25aa0c85c72d",
+    "id": "36906590-09f5-4e80-b098-9807d68623cf",
     "from": "claude code",
     "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
-    "messageId": "om_x100b65a153ebc8a4b48eb865a435b9b",
-    "message": "补上吧",
-    "createdAt": 1789481428288,
-    "traceId": "1cf7eed2",
+    "messageId": "om_x100b65a3e8d8e8a0b1458508c1eea5c",
+    "message": "人格底色和短期认知还没有严格的分开是什么意思？",
+    "createdAt": 1789491812714,
+    "traceId": "3126f6c5",
     "isGroup": true
   }
 ]
