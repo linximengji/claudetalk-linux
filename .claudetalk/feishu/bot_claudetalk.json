@@ -1,12 +1,12 @@
 [
   {
-    "id": "36906590-09f5-4e80-b098-9807d68623cf",
+    "id": "94c19048-d879-4bf8-9010-1c6e520a1845",
     "from": "claude code",
     "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
-    "messageId": "om_x100b65a3e8d8e8a0b1458508c1eea5c",
-    "message": "人格底色和短期认知还没有严格的分开是什么意思？",
-    "createdAt": 1789491812714,
-    "traceId": "3126f6c5",
+    "messageId": "om_x100b65ac5ac640a0b360b4b47c32d3f",
+    "message": "你看一下数字分身的最新的对话，数字分身说主动性的部分功能还没有完善。",
+    "createdAt": 1789493569394,
+    "traceId": "422b1ed3",
     "isGroup": true
   }
 ]
