@@ -1,14 +1,14 @@
 {
   "oc_44ba0d81afa9189a67ef99d0bce1124d\u0000/home/ubuntu/projects/claudetalk\u0000default\u0000feishu": {
     "sessionId": "870f9768-8cf5-4c44-8788-71d20a483044",
-    "lastActiveAt": 1789434652182,
+    "lastActiveAt": 1789434724931,
     "isGroup": true,
     "conversationId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
     "userId": "claude code",
     "subagentEnabled": false,
     "channel": "feishu",
     "cumulatedInputTokens": 15801,
-    "toolCallCount": 20,
+    "toolCallCount": 21,
     "lastMessage": "继续phase5",
     "lastReply": "API Error: 402 Insufficient Balance"
   }
