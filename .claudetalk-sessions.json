@@ -1,15 +1,15 @@
 {
   "oc_44ba0d81afa9189a67ef99d0bce1124d\u0000/home/ubuntu/projects/claudetalk\u0000default\u0000feishu": {
     "sessionId": "870f9768-8cf5-4c44-8788-71d20a483044",
-    "lastActiveAt": 1789474794425,
+    "lastActiveAt": 1789477743129,
     "isGroup": true,
     "conversationId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
     "userId": "claude code",
     "subagentEnabled": false,
     "channel": "feishu",
-    "cumulatedInputTokens": 20929,
-    "toolCallCount": 24,
-    "lastMessage": "可以",
-    "lastReply": "⑥表达习惯对齐完成。至此，你最初清单的 **①②③④⑤⑥ 全部落地**。\n\n**⑥这次做的**：\n- `observe_if_due(min_new=50)`：新发言累计达阈值才提炼，否则 no-op\n- 实体循环注册 `oral_observe` check，日常对话自动积累，不打断\n- 验证：首轮提炼出 2 条真实口头禅（「可以可以」「还有什么…吗？」），指纹从 7 → 9 条\n- `41 passed`\n\n**根因**：之前 `observe()` 只挂在审视流程上，日常对话不触发 → 指纹更新慢、样本窄。现在自动积累。\n\n---\n\n## 整体回顾（数字分身六项改进）\n\n| # | 项 | 产出 |\n|---|----|------|\n| ① | 时间意识 | 内部时钟按需注入 + 会话时间戳 |\n| ② | 状态记忆+目标感 | 三层目标（长期/当前/待办）认知层 |\n| ③ | 主动触发 | 待办带时间 + 实体循环自主提醒 + 飞书私聊 |\n| ④ | 分层隔离 | persona 卡版本化 + 快照/回滚 |\n| ⑤ | 记忆治理 | 核心基线落文件 + 注入 syste"
+    "cumulatedInputTokens": 24234,
+    "toolCallCount": 25,
+    "lastMessage": "整体测试一轮",
+    "lastReply": "整体回归完成，六项全部实测通过。\n\n## 回归结果\n\n| # | 项 | 实测 | 结果 |\n|---|----|------|------|\n| ① | 时间意识 | 「现在几点」→「21点08，周二」；「上次多久前」→「不到1分钟」 | ✅ |\n| ② | 状态记忆+目标感 | 长期/当前目标 + 待办三层正确落库与查回 | ✅ |\n| ③ | 主动触发 | 到期待办 → 实体循环捡起 → outbox → twin 发飞书私聊（日志实锤 `[outbox] sent 1, cleaned 1`） | ✅ |\n| ④ | 分层隔离 | persona 历史快照可查（source=review/refine） | ✅ |\n| ⑤ | 记忆治理 | 15 条核心基线，注入生效 | ✅ |\n| ⑥ | 表达习惯 | 9 条语言指纹，含新提炼的「可以可以」「还有什么…吗？」 | ✅ |\n| D6 | 工程诚实边界 | 「建表跑代码」→ 如实说做不了、指路 Claude Code | ✅ |\n| D9 | 写操作防护 | 模糊「记住…」→ 不写库（待办数不变） | ✅ |\n\n## 回归中揪出"
   }
 }
