@@ -1450,3 +1450,4 @@
 {"ts":"2026-09-15T01:12:04.930Z","workDir":"/home/ubuntu/projects/claudetalk","model":"","inputTokens":0,"outputTokens":0,"cacheReadTokens":0,"costUSD":0,"session_id":"870f9768-8cf5-4c44-8788-71d20a483044"}
 {"ts":"2026-09-15T01:13:36.853Z","workDir":"/home/ubuntu/projects/claudetalk","model":"deepseek-v4-pro","inputTokens":480,"outputTokens":622,"cacheReadTokens":532352,"costUSD":0.284126,"session_id":"870f9768-8cf5-4c44-8788-71d20a483044"}
 {"ts":"2026-09-15T01:15:50.513Z","workDir":"/home/ubuntu/projects/claudetalk","model":"deepseek-v4-pro","inputTokens":1009,"outputTokens":1032,"cacheReadTokens":1346560,"costUSD":0.7041250000000001,"session_id":"870f9768-8cf5-4c44-8788-71d20a483044"}
+{"ts":"2026-09-15T12:19:54.421Z","workDir":"/home/ubuntu/projects/claudetalk","model":"deepseek-v4-pro","inputTokens":3639,"outputTokens":7066,"cacheReadTokens":5530875,"costUSD":2.9602824999999995,"session_id":"870f9768-8cf5-4c44-8788-71d20a483044"}
