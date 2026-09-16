@@ -1,12 +1,12 @@
 [
   {
-    "id": "c51405a0-fc3b-4f87-95a7-32da85f656d9",
+    "id": "9488e89c-5b84-4fc8-870d-7e33e4af352d",
     "from": "claude code",
     "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
-    "messageId": "om_x100b65aa5f3bbca4b1889c140adb218",
-    "message": "就按照这个方式组织",
-    "createdAt": 1789518112360,
-    "traceId": "caf56cfc",
+    "messageId": "om_x100b65aa0fb614b4b3f0e47dd744d81",
+    "message": "输出中断了，继续",
+    "createdAt": 1789518872700,
+    "traceId": "d1db9c7e",
     "isGroup": true
   }
 ]
