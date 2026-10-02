@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "id": "ba7c7a6c-7422-4c0b-9298-f3b204ad417c",
+    "from": "claude code",
+    "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
+    "messageId": "om_x100b64c6b1d144a0b1bfb084f4aa0b3",
+    "message": "半导体日报，还是没有发送",
+    "createdAt": 1790914546605,
+    "traceId": "688cf9cb",
+    "isGroup": true
+  }
+]

@@ -14,14 +14,14 @@
   },
   "oc_d1891a6d3afd0337009e23c90c37a0f7\u0000/home/ubuntu/projects/claudetalk\u0000trip\u0000feishu\u0000ou_f19c3f5115838fd3dbf9f4bf577d1efb": {
     "sessionId": "197f4568-e942-4b62-992d-a1aad89de0fc",
-    "lastActiveAt": 1790914486818,
+    "lastActiveAt": 1790914560320,
     "isGroup": false,
     "conversationId": "oc_d1891a6d3afd0337009e23c90c37a0f7",
     "userId": "ou_f19c3f5115838fd3dbf9f4bf577d1efb",
     "subagentEnabled": true,
     "channel": "feishu",
     "cumulatedInputTokens": 0,
-    "toolCallCount": 2,
+    "toolCallCount": 3,
     "lastMessage": "<location name=\"竹贤山庄正南方向164米\" coords=\"lat:30.627329894080383,lng:119.68245914781672\"/>",
     "lastReply": "Failed to authenticate. API Error: 403 Access to model denied. Please make sure you are eligible for using the model."
   }
