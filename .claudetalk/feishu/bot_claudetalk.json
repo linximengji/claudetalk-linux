@@ -1,12 +1,1 @@
-[
-  {
-    "id": "a276dcad-14a6-48b1-a396-3de54c703c15",
-    "from": "claude code",
-    "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
-    "messageId": "om_x100b64cdb0fac8a0b4bf21d3d5e544f",
-    "message": "trip agent处理location失败的原因是什么？",
-    "createdAt": 1790943206697,
-    "traceId": "bba722a6",
-    "isGroup": true
-  }
-]
+[]
