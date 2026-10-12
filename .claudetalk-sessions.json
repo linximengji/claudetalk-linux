@@ -1,15 +1,15 @@
 {
   "oc_44ba0d81afa9189a67ef99d0bce1124d\u0000/home/ubuntu/projects/claudetalk\u0000default\u0000feishu": {
     "sessionId": "fbe188f6-f38d-47d7-8c71-912603e10733",
-    "lastActiveAt": 1791812360934,
+    "lastActiveAt": 1791821185048,
     "isGroup": true,
     "conversationId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
     "userId": "claude code",
     "subagentEnabled": false,
     "channel": "feishu",
-    "cumulatedInputTokens": 6457,
-    "toolCallCount": 2,
-    "lastMessage": "一，走b\n二，一段话说清楚\n三，去重加强，过滤也要加强，技术内容保留，商务，和供应链减少",
-    "lastReply": "Interesting — those Vicor/337 pairs share **2** entities and still aren't the same event. So entity overlap alone can't distinguish \"related but distinct\" (a lawsuit vs an ITC probe about the same垂直供电 topic) from \"duplicate\". These are genuinely related news that arguably *should* stay separate.\n\nThis tells me the rule-layer should be **conservative** — only catch near-certain duplicates — and lean on the **LLM** for the semantic judgments. The Terrafab case: 2 sources, one entity, same event. T"
+    "cumulatedInputTokens": 20351,
+    "toolCallCount": 3,
+    "lastMessage": "按照推荐走A方案",
+    "lastReply": "All modules load cleanly. Done.\n\n## 改动总结\n\n**邮件正文（`render.ts`）**\n- 移除所有条目外链和\"查看原文 →\"（国内打不开的根因）\n- 显示 LLM 给的中文摘要全文（不再截 280 字）\n- 每条 = 标题 + 一段话中文摘要 + 来源，无外链自足\n\n**翻译与过滤（`llm_processor.ts`）**\n- `summary_cn` 从\"≤40字\"改为\"80~120字，一段话说清楚：主体+事件+技术要点/影响\"——实测产出 73~129 字（均 98）\n- 过滤优先级重排：技术内容（工艺/设备/设计/架构）首要保留；**商务通稿、市场播报、投融资从严**（你要求减少商务和供应链）\n\n**去重（A 方案，`pipeline.ts` 步骤 2c + `llm_processor.ts` 的 `dedupeClassified`）**\n- 新增一次 LLM 全局去重合并：把已分类条目整体喂给模型，按\"是否同一事件\"合并跨批次/跨来源的重复\n- 实测抓到了你举的马斯克 Terafab 案例（Terrafab/Terafab 拼写差"
   }
 }
