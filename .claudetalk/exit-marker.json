@@ -1,8 +1,8 @@
 {
   "type": "unhandledRejection",
-  "ts": "2026-10-16T12:04:39.835Z",
+  "ts": "2026-10-16T16:02:19.111Z",
   "pid": 3191201,
-  "uptime_s": 3238284,
+  "uptime_s": 3252543,
   "startup_phases": [
     "initLogFile",
     "loadConfig",
