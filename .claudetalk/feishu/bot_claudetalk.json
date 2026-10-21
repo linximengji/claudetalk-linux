@@ -1,12 +1,12 @@
 [
   {
-    "id": "ffd2fbe5-8192-4c73-8705-46ebbd527a1b",
+    "id": "75214126-5777-4efd-8a11-581928c5e5fd",
     "from": "claude code",
     "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
-    "messageId": "om_x100b620d011e90a4cefaab9b1891c04",
-    "message": "出错原因是什么？",
-    "createdAt": 1792251136250,
-    "traceId": "621aa628",
+    "messageId": "om_x100b62b4e21a0ca4ceb6b1484d397d0",
+    "message": "可以挑一条memory-mcp的召回改动，并测试效果",
+    "createdAt": 1792543441186,
+    "traceId": "713cc82c",
     "isGroup": false
   }
 ]
