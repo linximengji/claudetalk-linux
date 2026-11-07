@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "id": "517cf48e-e7f4-46ed-8d57-52eeaad1cd11",
+    "from": "claude code",
+    "chatId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
+    "messageId": "om_x100b61dcf61044acce9c2bbe0e61fa4",
+    "message": "今天的记忆审核还是发现有问题\n命名空间 daily-report/ 与 daily_report/ 并存（1 个文件），应合并到 daily_report/",
+    "createdAt": 1794018191334,
+    "traceId": "a698d095",
+    "isGroup": false
+  }
+]
