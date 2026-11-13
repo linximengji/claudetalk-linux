@@ -1,15 +1,15 @@
 {
   "oc_44ba0d81afa9189a67ef99d0bce1124d\u0000/home/ubuntu/projects/claudetalk\u0000default\u0000feishu\u0000claude code": {
     "sessionId": "3d636c44-2121-4fe9-a18f-7df0a8622234",
-    "lastActiveAt": 1794561475155,
+    "lastActiveAt": 1794572827347,
     "isGroup": false,
     "conversationId": "oc_44ba0d81afa9189a67ef99d0bce1124d",
     "userId": "claude code",
     "subagentEnabled": false,
     "channel": "feishu",
-    "cumulatedInputTokens": 217220,
-    "toolCallCount": 12,
-    "lastMessage": "今天的记忆体审核结论还是有很多错误。",
-    "lastReply": "我核对了一下，这些“错误”确实存在，但其中只有一部分是检查程序真的判断错了。我把它们归成三类：\n\n**1. 检查程序确实判错了（应当修复）**\n- 有 **27 条** `_index` 被判定为“缺项目描述、缺功能用途”。比如 `agent-core` 的文件开头就是“agent-core 共享库基座——守护进程的共享基座”，`claudetalk` 的开头是“多通道 AI 助手系统”，这些显然就是一句话定义。原因是规则用的正则只识别“描述”“简介”“概述”“是什么”这几个词。检查程序太依赖字面词，而内容本身是够的。\n- **28 条**只缺“约束条件”就被计入。这类记录大多完整写清了选什么、为什么、怎么落地（比如 `archive-confirm-callback-card` 写了 Why 和 How to apply）。只有约束条件写得少，并不能说明记录不合格。\n\n**2. 记录本身确实不完整（不是检查程序的错）**\n- **56 条 design 只有一句话、没有写原因**（比如 `agent-complete-entity` 只有一段结论）。另有 33+24 条缺决策原因或方"
+    "cumulatedInputTokens": 217385,
+    "toolCallCount": 13,
+    "lastMessage": "只要够长就算完整逻辑是不是过于简单粗暴了",
+    "lastReply": "你说得对，用长度判断确实容易走偏：一条 300 字的废话记录也会被判为“完整”。而且规则本身就是靠字面匹配，连“含原因”都可能只是碰到了“因为”两个字。\n\n我建议换成**语义判断**，分三步：\n\n1. **关键词规则只当粗筛**，只保留判断准确、不容易误报的两条：`deps` 缺影响范围、`design` 完全没有任何推理痕迹。\n2. **粗筛命中的条目交给 LLM 判断**（走 proxy，和现有的深度审计用同一套调用）：输入是这条记忆的正文和它所在段的定义，让 LLM 判断“这条记录放这个段够不够”。返回 `完整`、`不完整` 以及缺了什么。\n3. **LLM 的结论只写进报告，不建待办。**现在的 `_create_memory_review_tasks` 会把完整性结果变成待办任务；那样判断一错，就会多出错误任务。\n\n代价是：深度审计日会多出 200 多次 LLM 调用。按现在 flash 的 403 失败率，可能有三成调用会失败；失败的那些标成“未判定”，而不是算作“完整”。\n\n另一种更轻的办法是**不做完整性检查**。`_index` 和 `deps` 的缺口在真实使用中本"
   }
 }
